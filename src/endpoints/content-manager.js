@@ -115,7 +115,7 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
     const contentLog = getContentLog(contentLogPath);
 
     for (const contentItem of contentIndex) {
-        // If the content item is already in the log, skip it
+
         if (contentLog.includes(contentItem.filename) && !forceCategories?.includes(contentItem.type)) {
             continue;
         }
@@ -148,9 +148,26 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
             continue;
         }
 
-        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-        console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
-        anyContentAdded = true;
+
+        if (contentItem.type === CONTENT_TYPES.WORLD) {
+            try {
+                fs.symlinkSync(contentPath, targetPath, 'file');
+                console.info(`Created symlink for ${contentItem.filename} to ${targetPath}`);
+                anyContentAdded = true;
+            } catch (err) {
+                console.error(`Failed to create symlink for ${contentItem.filename}: ${err.message}`);
+
+                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+                fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+                console.info(`Copied ${contentItem.filename} to ${targetPath} as fallback`);
+                anyContentAdded = true;
+            }
+        } else {
+            fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+            fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+            console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
+            anyContentAdded = true;
+        }
     }
 
     writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
