@@ -507,14 +507,40 @@ export async function initUserStorage(dataRoot) {
     console.log('Using data root:', color.green(dataRoot));
     await storage.init({
         dir: path.join(dataRoot, '_storage'),
-        ttl: false, // Never expire
+        ttl: false,
     });
 
     const keys = await getAllUserHandles();
 
     // If there are no users, create the default user
     if (keys.length === 0) {
-        await storage.setItem(toKey(DEFAULT_USER.handle), DEFAULT_USER);
+        const defaultUser = {
+            ...DEFAULT_USER,
+            created: Date.now(), // Override the frozen created timestamp
+            salt: getPasswordSalt(), // Ensure salt is set
+        };
+        await storage.setItem(toKey(DEFAULT_USER.handle), defaultUser);
+        console.log('Created default user with admin status:', defaultUser.admin);
+    } else {
+        // Check if default-user exists and ensure it has admin: true
+        const defaultUserKey = toKey(DEFAULT_USER.handle);
+        const existingUser = await storage.getItem(defaultUserKey);
+        if (existingUser) {
+            if (!existingUser.admin) {
+                existingUser.admin = true;
+                await storage.setItem(defaultUserKey, existingUser);
+                console.log('Updated default-user to admin');
+            }
+        } else {
+            // If default-user doesn't exist, create it
+            const defaultUser = {
+                ...DEFAULT_USER,
+                created: Date.now(),
+                salt: getPasswordSalt(),
+            };
+            await storage.setItem(defaultUserKey, defaultUser);
+            console.log('Created default user with admin status:', defaultUser.admin);
+        }
     }
 }
 
