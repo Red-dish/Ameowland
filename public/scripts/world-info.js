@@ -1726,7 +1726,7 @@ export async function showWorldEditor(name) {
  * @param {string} name - The name of the world to load
  * @return {Promise<Object|null>} A promise that resolves to the loaded world information, or null if the request fails.
  */
-export async function loadWorldInfo(name) {
+export async function loadWorldInfo(name, isBotRequest = false) {
     if (!name) {
         return;
     }
@@ -1738,7 +1738,7 @@ export async function loadWorldInfo(name) {
     const response = await fetch('/api/worldinfo/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ name: name }),
+        body: JSON.stringify({ name: name, isBotRequest }),
         cache: 'no-cache',
     });
 
@@ -1746,6 +1746,10 @@ export async function loadWorldInfo(name) {
         const data = await response.json();
         worldInfoCache.set(name, data);
         return data;
+    } else if (response.status === 403) {
+        toastr.error(`You do not have permission to access the lorebook '${name}'.`, 'Permission Denied');
+    } else {
+        toastr.error(`Failed to load lorebook '${name}'.`, 'Error');
     }
 
     return null;
