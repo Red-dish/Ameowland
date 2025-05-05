@@ -90,7 +90,7 @@ export default async function getWhitelistMiddleware() {
         const clientIp = getIpFromRequest(req);
         const forwardedIp = getForwardedIp(req);
         const userAgent = req.headers['user-agent'];
-        /*
+
 
         //clientIp = req.connection.remoteAddress.split(':').pop();
         if (!whitelist.some(x => ipMatching.matches(clientIp, ipMatching.getMatch(x)))
@@ -110,7 +110,7 @@ export default async function getWhitelistMiddleware() {
             }
 
             return res.status(403).send(forbiddenWebpage({ ipDetails }));
-        }*/
+        }
         next();
     };
 }
