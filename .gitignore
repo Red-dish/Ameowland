@@ -57,8 +57,3 @@ public/scripts/extensions/third-party
 data_backup/
 /default/*
 /default/
-_cache
-cookie-secret.txt
-_storage
-_webpack
-stdata
