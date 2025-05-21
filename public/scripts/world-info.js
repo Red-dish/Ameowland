@@ -22,6 +22,7 @@ import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { isAdmin, getCurrentUserHandle } from './user.js';
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -869,6 +870,123 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
 
     world_names = data.world_names?.length ? data.world_names : [];
+
+
+        if (typeof getCurrentUserHandle !== 'function') {
+            function getCurrentUserHandle() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Try to get from localStorage or sessionStorage
+                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+                        if (userID) return userID;
+                        
+                        // Check if it's available from other ST modules
+                        if (window.userSettings && window.userSettings.name) {
+                            return window.userSettings.name;
+                        }
+                    }
+                    
+                    // If running in Node.js side of SillyTavern
+                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
+                        return process.env.CURRENT_USER;
+                    }
+                    
+                    return 'anonymous';
+                } catch (error) {
+                    console.error('[WorldInfo] Error getting user handle:', error);
+                    return 'anonymous';
+                }
+            }
+            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
+        }
+
+// Function to check if user is admin - only define if it doesn't exist
+        if (typeof isAdmin !== 'function') {
+            function isAdmin() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Check if it's available from other ST modules
+                        if (typeof window.isUserAdmin === 'function') {
+                            return window.isUserAdmin();
+                        }
+                        
+                        // Fallback to checking specific admin users
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    // If running in Node.js side
+                    if (typeof process !== 'undefined') {
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.error('[WorldInfo] Error checking admin status:', error);
+                    return false;
+                }
+            }
+            console.log('[WorldInfo] Defined fallback isAdmin function');
+        }
+
+        // Your original filtering code with added logging
+        function filterWorldNames(data) {
+            let world_names = data.world_names?.length ? data.world_names : [];
+            console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
+
+            if (Array.isArray(world_names)) {
+                try {
+                    const currentUserHandle = getCurrentUserHandle();
+                    const isUserAdmin = isAdmin();
+                    console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}`);
+
+                    // Exempt "default-user" and admins from filtering
+                    if (currentUserHandle === 'default-user' || isUserAdmin) {
+                        console.log('[WorldInfo] Bypassing lorebook filtering for', currentUserHandle);
+                        // No filtering needed
+                    } else {
+                        console.log('[WorldInfo] Applying filters for user', currentUserHandle);
+                        
+                        // First layer: Filter out #hidden# files
+                        let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
+                        console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
+
+                        // Second layer: Apply user handle pattern matching
+                        world_names = filteredNames.filter(name => {
+                            // Match filenames like $$-Alice-MyLorebook
+                            const userHandleMatch = name.match(/^\$\$-(\w+)/);
+
+                            if (userHandleMatch) {
+                                // Only keep if the handle matches the current user (case-insensitive)
+                                const matches = userHandleMatch[1].toLowerCase() === currentUserHandle.toLowerCase();
+                                if (!matches) {
+                                    console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
+                                }
+                                return matches;
+                            }
+
+                            // Files without the user pattern pass through
+                            return true;
+                        });
+                        
+                        console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
+                    }
+                } catch (error) {
+                    console.error('[WorldInfo] Error during world filtering:', error);
+                    // In case of error, keep original world_names
+                }
+            }
+            
+            return world_names;
+        }
+
+        // Call the function with the data and assign the result back
+        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -1726,7 +1844,7 @@ export async function showWorldEditor(name) {
  * @param {string} name - The name of the world to load
  * @return {Promise<Object|null>} A promise that resolves to the loaded world information, or null if the request fails.
  */
-export async function loadWorldInfo(name, isBotRequest = false) {
+export async function loadWorldInfo(name) {
     if (!name) {
         return;
     }
@@ -1738,7 +1856,7 @@ export async function loadWorldInfo(name, isBotRequest = false) {
     const response = await fetch('/api/worldinfo/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ name: name, isBotRequest }),
+        body: JSON.stringify({ name: name }),
         cache: 'no-cache',
     });
 
@@ -1746,10 +1864,6 @@ export async function loadWorldInfo(name, isBotRequest = false) {
         const data = await response.json();
         worldInfoCache.set(name, data);
         return data;
-    } else if (response.status === 403) {
-        toastr.error(`You do not have permission to access the lorebook '${name}'.`, 'Permission Denied');
-    } else {
-        toastr.error(`Failed to load lorebook '${name}'.`, 'Error');
     }
 
     return null;
@@ -5474,3 +5588,6 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
         return false;
     }
 }
+
+const currentUserHandle = getCurrentUserHandle();
+console.log("Current user handle:", currentUserHandle);
