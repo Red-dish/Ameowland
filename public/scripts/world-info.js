@@ -24,6 +24,92 @@ import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { isAdmin, getCurrentUserHandle } from './user.js';
 
+const botmakersMap = {
+    "alice": ["AliceBot1", "AliceBot2", "SharedBot"],
+    "bob": ["BobsCreation", "BobsWorld", "SharedBot"],
+    "charlie": ["CharliesLore", "CharlieUniverse"]
+};
+
+/**
+*Checks if the current user is an admin*
+*@returns {boolean} Whether the current user is an admin*
+*/
+function isCurrentUserAdmin() {
+    try {
+        // Use the existing isAdmin function if available
+        if (typeof isAdmin === 'function') {
+            return isAdmin();
+        }
+
+        // Fallback to checking specific admin usernames
+        const userHandle = getCurrentUserHandle();
+        return ['admin', 'default-user'].includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking admin status:', error);
+        return false;
+    }
+}
+
+/**
+ *Checks if the current user is a botmaker*
+* @returns {boolean} Whether the current user is a botmaker*
+ */
+function isCurrentUserBotmaker() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return Object.keys(botmakersMap).includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking botmaker status:', error);
+        return false;
+    }
+}
+
+/**
+* Gets the list of loreBooks the current user has access to if they're a botmaker*
+ *@returns {string[]} Array of loreBook names the user has access to*
+*/
+function getBotmakerAllowedLoreBooks() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return botmakersMap[userHandle] || [];
+    } catch (error) {
+        console.error('[WI] Error getting allowed loreBooks:', error);
+        return [];
+    }
+}
+
+/**
+*Checks if a user has access to view a specific loreBook*
+*@param {string} lorebookName - Name of the loreBook to check access for*
+*@returns {boolean} Whether the user has access to the loreBook*
+*/
+function hasLoreBookAccess(lorebookName) {
+    // Admins have access to everything
+    if (isCurrentUserAdmin()) {
+        return true;
+    }
+
+    // Assume personal loreBooks are prefixed with "$$-username-"
+    const userHandle = getCurrentUserHandle();
+    if (lorebookName.startsWith(`$$-${userHandle}-`)) {
+        return true; // User's personal loreBook
+    }
+
+    // Check if it's a global loreBook (no special prefix)
+    if (!lorebookName.startsWith('$$-') && !lorebookName.includes('#hidden#')) {
+        return true; // Global loreBook accessible to all
+    }
+
+    // For botmakers, check if they have access to this specific loreBook
+    if (isCurrentUserBotmaker()) {
+        const allowedBooks = getBotmakerAllowedLoreBooks();
+        return allowedBooks.includes(lorebookName);
+    }
+
+    // By default, deny access
+    return false;
+}
+
 export const world_info_insertion_strategy = {
     evenly: 0,
     character_first: 1,
@@ -868,6 +954,7 @@ export function setWorldInfoSettings(settings, data) {
 
     $('#world_info_max_recursion_steps').val(world_info_max_recursion_steps);
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
+    
 
     world_names = data.world_names?.length ? data.world_names : [];
 
@@ -935,6 +1022,11 @@ export function setWorldInfoSettings(settings, data) {
         }
 
         // Your original filtering code with added logging
+        /**
+         *Filters world names based on user permissions*
+        * @param {object} data - The data containing world names*
+        *@returns {string[]} Filtered list of world names*
+        */
         function filterWorldNames(data) {
             let world_names = data.world_names?.length ? data.world_names : [];
             console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
@@ -942,38 +1034,48 @@ export function setWorldInfoSettings(settings, data) {
             if (Array.isArray(world_names)) {
                 try {
                     const currentUserHandle = getCurrentUserHandle();
-                    const isUserAdmin = isAdmin();
-                    console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}`);
+                    const isUserAdmin = isCurrentUserAdmin();
+                    const isUserBotmaker = isCurrentUserBotmaker();
+                    console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
 
-                    // Exempt "default-user" and admins from filtering
-                    if (currentUserHandle === 'default-user' || isUserAdmin) {
-                        console.log('[WorldInfo] Bypassing lorebook filtering for', currentUserHandle);
+                    // Exempt admins from filtering
+                    if (isUserAdmin) {
+                        console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
                         // No filtering needed
                     } else {
                         console.log('[WorldInfo] Applying filters for user', currentUserHandle);
-                        
-                        // First layer: Filter out #hidden# files
+
+                        // First layer: Filter out #hidden# files for non-admins
                         let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
                         console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
 
                         // Second layer: Apply user handle pattern matching
                         world_names = filteredNames.filter(name => {
-                            // Match filenames like $$-Alice-MyLorebook
-                            const userHandleMatch = name.match(/^\$\$-(\w+)/);
-
-                            if (userHandleMatch) {
-                                // Only keep if the handle matches the current user (case-insensitive)
-                                const matches = userHandleMatch[1].toLowerCase() === currentUserHandle.toLowerCase();
-                                if (!matches) {
-                                    console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
-                                }
-                                return matches;
+                            // Personal loreBooks: match username prefix
+                            if (name.startsWith(`$$-${currentUserHandle}-`)) {
+                                return true;
                             }
 
-                            // Files without the user pattern pass through
-                            return true;
+                            // Global loreBooks: available to everyone
+                            if (!name.startsWith('$$-')) {
+                                return true;
+                            }
+
+                            // Botmaker loreBooks: check permissions
+                            if (isUserBotmaker) {
+                                const allowedBooks = getBotmakerAllowedLoreBooks();
+                                return allowedBooks.includes(name);
+                            }
+
+                            // User-specific loreBooks: deny access
+                            if (name.match(/^\$\$-(\w+)/)) {
+                                console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
+                                return false;
+                            }
+
+                            return false;
                         });
-                        
+
                         console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
                     }
                 } catch (error) {
@@ -981,9 +1083,9 @@ export function setWorldInfoSettings(settings, data) {
                     // In case of error, keep original world_names
                 }
             }
-            
+
             return world_names;
-        }
+        }        
 
         // Call the function with the data and assign the result back
         world_names = filterWorldNames(data);
@@ -1878,7 +1980,7 @@ export async function updateWorldInfoList() {
 
     if (result.ok) {
         var data = await result.json();
-        world_names = data.world_names?.length ? data.world_names : [];
+        world_names = filterWorldNames(data);
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -2015,6 +2117,22 @@ function displayWorldEntries(name, data, navigation = navigation_option.none, fl
     updateEditor = (navigation, flashOnNav = true) => displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
+
+    const hasEditPermission = isCurrentUserAdmin() ||
+                              !name.startsWith('$$-') ||
+                              name.startsWith(`$$-${getCurrentUserHandle()}-`) ||
+                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
+
+    if (!hasEditPermission) {
+        // Make all inputs and controls read-only
+        worldEntriesList.find('input, textarea, select').prop('disabled', true);
+        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
+        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
+
+        // Add a notice
+        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
+    }
+
 
     // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
     // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
@@ -3705,6 +3823,17 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
+    // Check if user has permission to modify this lorebook
+    if (!isCurrentUserAdmin() && name.startsWith('$$-') && !name.startsWith(`$$-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
+            toastr.error('You do not have permission to modify this lorebook');
+            return;
+        }
+    }
+
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -3715,9 +3844,20 @@ export async function saveWorldInfo(name, data, immediately = false) {
     saveWorldDebounced(name, data);
 }
 
+
 async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
+
+    // Check if user has permission to rename this lorebook
+    if (!isCurrentUserAdmin() && oldName.startsWith('$$-') && !oldName.startsWith(`$$-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
+        if (!isAllowedBotmaker) {
+            toastr.error('You do not have permission to rename this lorebook');
+            return;
+        }
+    }
 
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
@@ -3764,6 +3904,16 @@ async function renameWorldInfo(name, data) {
 export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
+    }
+        // Check if user has permission to delete this lorebook
+    if (!isCurrentUserAdmin() && worldInfoName.startsWith('$$-') && !worldInfoName.startsWith(`$$-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
+            toastr.error('You do not have permission to delete this lorebook');
+            return false;
+        }
     }
 
     const response = await fetch('/api/worldinfo/delete', {
@@ -3839,10 +3989,19 @@ export function getFreeWorldName() {
  * @returns {Promise<boolean>} - True if the world info was successfully created, false otherwise
  */
 export async function createNewWorldInfo(worldName, { interactive = false } = {}) {
-    const worldInfoTemplate = { entries: {} };
+        const worldInfoTemplate = { entries: {} };
 
     if (!worldName) {
         return false;
+    }
+
+    // Check if the user is trying to create a lorebook with a protected prefix
+    const userHandle = getCurrentUserHandle();
+    if (worldName.startsWith('$$-') && !worldName.startsWith(`$$-${userHandle}-`)) {
+        if (!isCurrentUserAdmin()) {
+            toastr.error('You can only create loreBooks with your own username prefix');
+            return false;
+        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -5503,6 +5662,22 @@ jQuery(() => {
  */
 export async function moveWorldInfoEntry(sourceName, targetName, uid) {
     if (sourceName === targetName) {
+        return false;
+    }
+
+    // Check permissions for source and target
+    const hasSourcePermission = isCurrentUserAdmin() ||
+                               !sourceName.startsWith('$$-') ||
+                               sourceName.startsWith(`$$-${getCurrentUserHandle()}-`) ||
+                               (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(sourceName));
+
+    const hasTargetPermission = isCurrentUserAdmin() ||
+                               !targetName.startsWith('$$-') ||
+                               targetName.startsWith(`$$-${getCurrentUserHandle()}-`) ||
+                               (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(targetName));
+
+    if (!hasSourcePermission || !hasTargetPermission) {
+        toastr.error('You do not have permission to move entries between these loreBooks');
         return false;
     }
 
