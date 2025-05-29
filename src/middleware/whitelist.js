@@ -91,7 +91,6 @@ export default async function getWhitelistMiddleware() {
         const forwardedIp = getForwardedIp(req);
         const userAgent = req.headers['user-agent'];
 
-
         //clientIp = req.connection.remoteAddress.split(':').pop();
         if (!whitelist.some(x => ipMatching.matches(clientIp, ipMatching.getMatch(x)))
             || forwardedIp && !whitelist.some(x => ipMatching.matches(forwardedIp, ipMatching.getMatch(x)))

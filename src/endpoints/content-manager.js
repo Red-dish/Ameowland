@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import process from 'node:process';
 import { Buffer } from 'node:buffer';
 
 import express from 'express';
@@ -8,15 +7,17 @@ import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from  'write-file-atomic';
 
-import { getConfigValue, color } from '../util.js';
+import { getConfigValue, color, setPermissionsSync } from '../util.js';
 import { write } from '../character-card-parser.js';
+import { serverDirectory } from '../server-directory.js';
 
-const contentDirectory = path.join(process.cwd(), 'default/content');
-const scaffoldDirectory = path.join(process.cwd(), 'default/scaffold');
+const contentDirectory = path.join(serverDirectory, 'default/content');
+const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
 const contentIndexPath = path.join(contentDirectory, 'index.json');
 const scaffoldIndexPath = path.join(scaffoldDirectory, 'index.json');
 
 const WHITELIST_GENERIC_URL_DOWNLOAD_SOURCES = getConfigValue('whitelistImportDomains', []);
+const USER_AGENT = 'SillyTavern';
 
 /**
  * @typedef {Object} ContentItem
@@ -115,6 +116,7 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
     const contentLog = getContentLog(contentLogPath);
 
     for (const contentItem of contentIndex) {
+        // If the content item is already in the log, skip it
         if (contentLog.includes(contentItem.filename) && !forceCategories?.includes(contentItem.type)) {
             continue;
         }
@@ -147,25 +149,10 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
             continue;
         }
 
-        // Symlink for both WORLD and CHARACTER types
-        if (contentItem.type === CONTENT_TYPES.WORLD || contentItem.type === CONTENT_TYPES.CHARACTER) {
-            try {
-                fs.symlinkSync(contentPath, targetPath, 'file');
-                console.info(`Created symlink for ${contentItem.filename} to ${targetPath}`);
-                anyContentAdded = true;
-            } catch (err) {
-                console.error(`Failed to create symlink for ${contentItem.filename}: ${err.message}`);
-                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-                fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-                console.info(`Copied ${contentItem.filename} to ${targetPath} as fallback`);
-                anyContentAdded = true;
-            }
-        } else {
-            fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-            fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-            console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
-            anyContentAdded = true;
-        }
+        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        setPermissionsSync(targetPath);
+        console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
+        anyContentAdded = true;
     }
 
     writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
@@ -337,48 +324,80 @@ function getContentLog(contentLogPath) {
 }
 
 async function downloadChubLorebook(id) {
-    const result = await fetch('https://api.chub.ai/api/lorebooks/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            'fullPath': id,
-            'format': 'SILLYTAVERN',
-        }),
+    const [lorebooks, creatorName, projectName] = id.split('/');
+    const result = await fetch(`https://api.chub.ai/api/${lorebooks}/${creatorName}/${projectName}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
     });
 
     if (!result.ok) {
         const text = await result.text();
         console.error('Chub returned error', result.statusText, text);
+        throw new Error('Failed to fetch lorebook metadata');
+    }
+
+    /** @type {any} */
+    const metadata = await result.json();
+    const projectId = metadata.node?.id;
+
+    if (!projectId) {
+        throw new Error('Project ID not found in lorebook metadata');
+    }
+
+    const downloadUrl = `https://api.chub.ai/api/v4/projects/${projectId}/repository/files/raw%252Fsillytavern_raw.json/raw`;
+    const downloadResult = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
+    });
+
+    if (!downloadResult.ok) {
+        const text = await downloadResult.text();
+        console.error('Chub returned error', downloadResult.statusText, text);
         throw new Error('Failed to download lorebook');
     }
 
-    const name = id.split('/').pop();
-    const buffer = Buffer.from(await result.arrayBuffer());
+    const name = projectName;
+    const buffer = Buffer.from(await downloadResult.arrayBuffer());
     const fileName = `${sanitize(name)}.json`;
-    const fileType = result.headers.get('content-type');
+    const fileType = downloadResult.headers.get('content-type');
 
     return { buffer, fileName, fileType };
 }
 
 async function downloadChubCharacter(id) {
-    const result = await fetch('https://api.chub.ai/api/characters/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            'format': 'tavern',
-            'fullPath': id,
-        }),
+    const [creatorName, projectName] = id.split('/');
+    const result = await fetch(`https://api.chub.ai/api/characters/${creatorName}/${projectName}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
     });
 
     if (!result.ok) {
         const text = await result.text();
         console.error('Chub returned error', result.statusText, text);
+        throw new Error('Failed to fetch character metadata');
+    }
+
+    /** @type {any} */
+    const metadata = await result.json();
+    const downloadUrl = metadata.node?.max_res_url;
+
+    if (!downloadUrl) {
+        throw new Error('Download URL not found in character metadata');
+    }
+
+    const downloadResult = await fetch(downloadUrl);
+
+    if (!downloadResult.ok) {
+        const text = await downloadResult.text();
+        console.error('Chub returned error', downloadResult.statusText, text);
         throw new Error('Failed to download character');
     }
 
-    const buffer = Buffer.from(await result.arrayBuffer());
-    const fileName = result.headers.get('content-disposition')?.split('filename=')[1] || `${sanitize(id)}.png`;
-    const fileType = result.headers.get('content-type');
+    const buffer = Buffer.from(await downloadResult.arrayBuffer());
+    const fileName =
+        downloadResult.headers.get('content-disposition')?.split('filename=')[1]?.replace(/["']/g, '') ||
+        `${sanitize(projectName)}.png`;
+    const fileType = downloadResult.headers.get('content-type');
 
     return { buffer, fileName, fileType };
 }
