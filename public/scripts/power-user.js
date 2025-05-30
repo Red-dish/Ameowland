@@ -124,6 +124,7 @@ export const persona_description_positions = {
 };
 
 let power_user = {
+    spoiler_free_mode: true,
     charListGrid: false,
     tokenizer: tokenizers.BEST_MATCH,
     token_padding: 64,
