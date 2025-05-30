@@ -22,93 +22,6 @@ import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { isAdmin, getCurrentUserHandle } from './user.js';
-
-const botmakersMap = {
-    "alice": ["AliceBot1", "AliceBot2", "SharedBot"],
-    "bob": ["BobsCreation", "BobsWorld", "SharedBot"],
-    "charlie": ["CharliesLore", "CharlieUniverse"]
-};
-
-/**
-*Checks if the current user is an admin*
-*@returns {boolean} Whether the current user is an admin*
-*/
-function isCurrentUserAdmin() {
-    try {
-        // Use the existing isAdmin function if available
-        if (typeof isAdmin === 'function') {
-            return isAdmin();
-        }
-
-        // Fallback to checking specific admin usernames
-        const userHandle = getCurrentUserHandle();
-        return ['admin', 'default-user'].includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking admin status:', error);
-        return false;
-    }
-}
-
-/**
- *Checks if the current user is a botmaker*
-* @returns {boolean} Whether the current user is a botmaker*
- */
-function isCurrentUserBotmaker() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return Object.keys(botmakersMap).includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking botmaker status:', error);
-        return false;
-    }
-}
-
-/**
-* Gets the list of loreBooks the current user has access to if they're a botmaker*
- *@returns {string[]} Array of loreBook names the user has access to*
-*/
-function getBotmakerAllowedLoreBooks() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return botmakersMap[userHandle] || [];
-    } catch (error) {
-        console.error('[WI] Error getting allowed loreBooks:', error);
-        return [];
-    }
-}
-
-/**
-*Checks if a user has access to view a specific loreBook*
-*@param {string} lorebookName - Name of the loreBook to check access for*
-*@returns {boolean} Whether the user has access to the loreBook*
-*/
-function hasLoreBookAccess(lorebookName) {
-    // Admins have access to everything
-    if (isCurrentUserAdmin()) {
-        return true;
-    }
-
-    // Assume personal loreBooks are prefixed with "bb-username-"
-    const userHandle = getCurrentUserHandle();
-    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
-        return true; // User's personal loreBook
-    }
-
-    // Check if it's a global loreBook (no special prefix)
-    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
-        return true; // Global loreBook accessible to all
-    }
-
-    // For botmakers, check if they have access to this specific loreBook
-    if (isCurrentUserBotmaker()) {
-        const allowedBooks = getBotmakerAllowedLoreBooks();
-        return allowedBooks.includes(lorebookName);
-    }
-
-    // By default, deny access
-    return false;
-}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -185,11 +98,28 @@ const KNOWN_DECORATORS = ['@@activate', '@@dont_activate'];
 
 // Typedef area
 /**
+ * @typedef {object} WIGlobalScanData The chat-independent data to be scanned. Each of
+ *     these fields can be enabled for scanning per entry.
+ * @property {string} personaDescription User persona description
+ * @property {string} characterDescription Character description
+ * @property {string} characterPersonality Character personality
+ * @property {string} characterDepthPrompt Character depth prompt (sometimes referred to as character notes)
+ * @property {string} scenario Character defined scenario
+ * @property {string} creatorNotes Character creator notes
+ */
+
+/**
  * @typedef {object} WIScanEntry The entry that triggered the scan
  * @property {number} [scanDepth] The depth of the scan
  * @property {boolean} [caseSensitive] If the scan is case sensitive
  * @property {boolean} [matchWholeWords] If the scan should match whole words
  * @property {boolean} [useGroupScoring] If the scan should use group scoring
+ * @property {boolean} [matchPersonaDescription] If the scan should match against the persona description
+ * @property {boolean} [matchCharacterDescription] If the scan should match against the character description
+ * @property {boolean} [matchCharacterPersonality] If the scan should match against the character personality
+ * @property {boolean} [matchCharacterDepthPrompt] If the scan should match against the character depth prompt
+ * @property {boolean} [matchScenario] If the scan should match against the character scenario
+ * @property {boolean} [matchCreatorNotes] If the scan should match against the creator notes
  * @property {number} [uid] The UID of the entry that triggered the scan
  * @property {string} [world] The world info book of origin of the entry
  * @property {string[]} [key] The primary keys to scan for
@@ -226,6 +156,11 @@ class WorldInfoBuffer {
     static externalActivations = new Map();
 
     /**
+     * @type {WIGlobalScanData} Chat independent data to be scanned, such as persona and character descriptions
+     */
+    #globalScanData = null;
+
+    /**
      * @type {string[]} Array of messages sorted by ascending depth
      */
     #depthBuffer = [];
@@ -253,9 +188,11 @@ class WorldInfoBuffer {
     /**
      * Initialize the buffer with the given messages.
      * @param {string[]} messages Array of messages to add to the buffer
+     * @param {WIGlobalScanData} globalScanData Chat independent context to be scanned
      */
-    constructor(messages) {
+    constructor(messages, globalScanData) {
         this.#initDepthBuffer(messages);
+        this.#globalScanData = globalScanData;
     }
 
     /**
@@ -311,6 +248,25 @@ class WorldInfoBuffer {
         const MATCHER = '\x01';
         const JOINER = '\n' + MATCHER;
         let result = MATCHER + this.#depthBuffer.slice(this.#startDepth, depth).join(JOINER);
+
+        if (entry.matchPersonaDescription && this.#globalScanData.personaDescription) {
+            result += JOINER + this.#globalScanData.personaDescription;
+        }
+        if (entry.matchCharacterDescription && this.#globalScanData.characterDescription) {
+            result += JOINER + this.#globalScanData.characterDescription;
+        }
+        if (entry.matchCharacterPersonality && this.#globalScanData.characterPersonality) {
+            result += JOINER + this.#globalScanData.characterPersonality;
+        }
+        if (entry.matchCharacterDepthPrompt && this.#globalScanData.characterDepthPrompt) {
+            result += JOINER + this.#globalScanData.characterDepthPrompt;
+        }
+        if (entry.matchScenario && this.#globalScanData.scenario) {
+            result += JOINER + this.#globalScanData.scenario;
+        }
+        if (entry.matchCreatorNotes && this.#globalScanData.creatorNotes) {
+            result += JOINER + this.#globalScanData.creatorNotes;
+        }
 
         if (this.#injectBuffer.length > 0) {
             result += JOINER + this.#injectBuffer.join(JOINER);
@@ -843,6 +799,7 @@ export const worldInfoCache = new StructuredCloneMap({ cloneOnGet: true, cloneOn
  * @param {string[]} chat - The chat messages to scan, in reverse order.
  * @param {number} maxContext - The maximum context size of the generation.
  * @param {boolean} isDryRun - If true, the function will not emit any events.
+ * @param {WIGlobalScanData} globalScanData Chat independent context to be scanned
  * @typedef {object} WIPromptResult
  * @property {string} worldInfoString - Complete world info string
  * @property {string} worldInfoBefore - World info that goes before the prompt
@@ -853,10 +810,10 @@ export const worldInfoCache = new StructuredCloneMap({ cloneOnGet: true, cloneOn
  * @property {Array} anAfter - Array of entries after Author's Note
  * @returns {Promise<WIPromptResult>} The world info string and depth.
  */
-export async function getWorldInfoPrompt(chat, maxContext, isDryRun) {
+export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanData) {
     let worldInfoString = '', worldInfoBefore = '', worldInfoAfter = '';
 
-    const activatedWorldInfo = await checkWorldInfo(chat, maxContext, isDryRun);
+    const activatedWorldInfo = await checkWorldInfo(chat, maxContext, isDryRun, globalScanData);
     worldInfoBefore = activatedWorldInfo.worldInfoBefore;
     worldInfoAfter = activatedWorldInfo.worldInfoAfter;
     worldInfoString = worldInfoBefore + worldInfoAfter;
@@ -876,75 +833,6 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun) {
         anAfter: activatedWorldInfo.ANAfterEntries ?? [],
     };
 }
-
-/**
-*Filters world names based on user permissions*
-*@param {object} data - The data containing world names*
-*@returns {string[]} Filtered list of world names*
-*/
-function filterWorldNames(data) {
-    let world_names = data.world_names?.length ? data.world_names : [];
-    console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
-
-    if (Array.isArray(world_names)) {
-        try {
-            const currentUserHandle = getCurrentUserHandle();
-            const isUserAdmin = isCurrentUserAdmin();
-            const isUserBotmaker = isCurrentUserBotmaker();
-            console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
-
-            // Exempt admins from filtering
-            if (isUserAdmin) {
-                console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
-                // No filtering needed - return all world names
-                return world_names;
-            } else {
-                console.log('[WorldInfo] Applying filters for user', currentUserHandle);
-
-                // First layer: Filter out #hidden# files for non-admins
-                let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
-                console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
-
-                // Second layer: Apply user handle pattern matching
-                world_names = filteredNames.filter(name => {
-                    // Personal loreBooks: match username prefix
-                    if (name.startsWith(`bb-${currentUserHandle}-`)) {
-                        return true;
-                    }
-
-                    // Global loreBooks: available to everyone
-                    if (!name.startsWith('bb-')) {
-                        return true;
-                    }
-
-                    // Botmaker loreBooks: check permissions
-                    if (isUserBotmaker) {
-                        const allowedBooks = getBotmakerAllowedLoreBooks();
-                        return allowedBooks.includes(name);
-                    }
-
-                    // User-specific loreBooks: deny access
-                    if (name.match(/^\$\$-(\w+)/)) {
-                        console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
-                        return false;
-                    }
-
-                    return false;
-                });
-
-                console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
-                return world_names;
-            }
-        } catch (error) {
-            console.error('[WorldInfo] Error during world filtering:', error);
-            // In case of error, keep original world_names
-            return world_names;
-        }
-    }
-
-    return world_names;
-}
-
 
 export function setWorldInfoSettings(settings, data) {
     if (settings.world_info_depth !== undefined)
@@ -1023,74 +911,8 @@ export function setWorldInfoSettings(settings, data) {
 
     $('#world_info_max_recursion_steps').val(world_info_max_recursion_steps);
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
-    
 
     world_names = data.world_names?.length ? data.world_names : [];
-
-
-        if (typeof getCurrentUserHandle !== 'function') {
-            function getCurrentUserHandle() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Try to get from localStorage or sessionStorage
-                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
-                        if (userID) return userID;
-                        
-                        // Check if it's available from other ST modules
-                        if (window.userSettings && window.userSettings.name) {
-                            return window.userSettings.name;
-                        }
-                    }
-                    
-                    // If running in Node.js side of SillyTavern
-                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
-                        return process.env.CURRENT_USER;
-                    }
-                    
-                    return 'anonymous';
-                } catch (error) {
-                    console.error('[WorldInfo] Error getting user handle:', error);
-                    return 'anonymous';
-                }
-            }
-            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
-        }
-
-// Function to check if user is admin - only define if it doesn't exist
-        if (typeof isAdmin !== 'function') {
-            function isAdmin() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Check if it's available from other ST modules
-                        if (typeof window.isUserAdmin === 'function') {
-                            return window.isUserAdmin();
-                        }
-                        
-                        // Fallback to checking specific admin users
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    // If running in Node.js side
-                    if (typeof process !== 'undefined') {
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    return false;
-                } catch (error) {
-                    console.error('[WorldInfo] Error checking admin status:', error);
-                    return false;
-                }
-            }
-            console.log('[WorldInfo] Defined fallback isAdmin function');
-        }
-        // Call the function with the data and assign the result back
-        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -1188,7 +1010,7 @@ function registerWorldInfoSlashCommands() {
     /**
      * Gets the name of the character-bound lorebook.
      * @param {import('./slash-commands/SlashCommand.js').NamedArguments} args Named arguments
-     * @param {import('./slash-commands/SlashCommand.js').UnnamedArguments} name Character name
+     * @param {string} name Character name
      * @returns {string} The name of the character-bound lorebook, a JSON string of the character's lorebooks, or an empty string
      */
     function getCharBookCallback({ type }, name) {
@@ -1982,7 +1804,7 @@ export async function updateWorldInfoList() {
 
     if (result.ok) {
         var data = await result.json();
-        world_names = filterWorldNames(data);
+        world_names = data.world_names?.length ? data.world_names : [];
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -2119,22 +1941,6 @@ function displayWorldEntries(name, data, navigation = navigation_option.none, fl
     updateEditor = (navigation, flashOnNav = true) => displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
-
-    const hasEditPermission = isCurrentUserAdmin() ||
-                              !name.startsWith('bb-') ||
-                              name.startsWith(`bb-${getCurrentUserHandle()}-`) ||
-                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
-
-    if (!hasEditPermission) {
-        // Make all inputs and controls read-only
-        worldEntriesList.find('input, textarea, select').prop('disabled', true);
-        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
-        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
-
-        // Add a notice
-        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
-    }
-
 
     // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
     // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
@@ -2429,6 +2235,12 @@ export const originalWIDataKeyMap = {
     'matchWholeWords': 'extensions.match_whole_words',
     'useGroupScoring': 'extensions.use_group_scoring',
     'caseSensitive': 'extensions.case_sensitive',
+    'matchPersonaDescription': 'extensions.match_persona_description',
+    'matchCharacterDescription': 'extensions.match_character_description',
+    'matchCharacterPersonality': 'extensions.match_character_personality',
+    'matchCharacterDepthPrompt': 'extensions.match_character_depth_prompt',
+    'matchScenario': 'extensions.match_scenario',
+    'matchCreatorNotes': 'extensions.match_creator_notes',
     'scanDepth': 'extensions.scan_depth',
     'automationId': 'extensions.automation_id',
     'vectorized': 'extensions.vectorized',
@@ -2846,7 +2658,7 @@ export async function getWorldEntry(name, data, entry) {
     if (!isMobile()) {
         $(characterFilter).select2({
             width: '100%',
-            placeholder: 'Tie this entry to specific characters or characters with specific tags',
+            placeholder: t`Tie this entry to specific characters or characters with specific tags`,
             allowClear: true,
             closeOnSelect: false,
         });
@@ -3243,7 +3055,7 @@ export async function getWorldEntry(name, data, entry) {
 
     const roleValue = entry.position === world_info_position.atDepth ? String(entry.role ?? extension_prompt_roles.SYSTEM) : '';
     template
-        .find(`select[name="position"] option[value=${entry.position}][data-role="${roleValue}"]`)
+        .find(`select[name="position"] option[value="${entry.position}"][data-role="${roleValue}"]`)
         .prop('selected', true)
         .trigger('input');
 
@@ -3446,7 +3258,7 @@ export async function getWorldEntry(name, data, entry) {
 
         // Create wrapper div
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move "${sourceName}" to:`;
+        wrapper.textContent = t`Move '${sourceName}' to:`;
 
         // Create container and append elements
         const container = document.createElement('div');
@@ -3545,6 +3357,28 @@ export async function getWorldEntry(name, data, entry) {
         await saveWorldInfo(name, data);
     });
     useGroupScoringSelect.val((entry.useGroupScoring === null || entry.useGroupScoring === undefined) ? 'null' : entry.useGroupScoring ? 'true' : 'false').trigger('input');
+
+    function handleMatchCheckbox(fieldName) {
+        const key = originalWIDataKeyMap[fieldName];
+        const checkBoxElem = template.find(`input[type="checkbox"][name="${fieldName}"]`);
+        checkBoxElem.data('uid', entry.uid);
+        checkBoxElem.on('input', async function () {
+            const uid = $(this).data('uid');
+            const value = $(this).prop('checked');
+
+            data.entries[uid][fieldName] = value;
+            setWIOriginalDataValue(data, uid, key, data.entries[uid][fieldName]);
+            await saveWorldInfo(name, data);
+        });
+        checkBoxElem.prop('checked', !!entry[fieldName]).trigger('input');
+    }
+
+    handleMatchCheckbox('matchPersonaDescription');
+    handleMatchCheckbox('matchCharacterDescription');
+    handleMatchCheckbox('matchCharacterPersonality');
+    handleMatchCheckbox('matchCharacterDepthPrompt');
+    handleMatchCheckbox('matchScenario');
+    handleMatchCheckbox('matchCreatorNotes');
 
     // automation id
     const automationIdInput = template.find('input[name="automationId"]');
@@ -3681,7 +3515,7 @@ function createEntryInputAutocomplete(input, callback, { allowMultiple = false }
     });
 
     $(input).on('focus click', function () {
-        $(input).autocomplete('search', allowMultiple ? String($(input).val()).split(/,\s*/).pop() : $(input).val());
+        $(input).autocomplete('search', allowMultiple ? String($(input).val()).split(/,\s*/).pop() : String($(input).val()));
     });
 }
 
@@ -3752,6 +3586,12 @@ export const newWorldInfoEntryDefinition = {
     disable: { default: false, type: 'boolean' },
     excludeRecursion: { default: false, type: 'boolean' },
     preventRecursion: { default: false, type: 'boolean' },
+    matchPersonaDescription: { default: false, type: 'boolean' },
+    matchCharacterDescription: { default: false, type: 'boolean' },
+    matchCharacterPersonality: { default: false, type: 'boolean' },
+    matchCharacterDepthPrompt: { default: false, type: 'boolean' },
+    matchScenario: { default: false, type: 'boolean' },
+    matchCreatorNotes: { default: false, type: 'boolean' },
     delayUntilRecursion: { default: 0, type: 'number' },
     probability: { default: 100, type: 'number' },
     useProbability: { default: true, type: 'boolean' },
@@ -3825,17 +3665,6 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
-    // Check if user has permission to modify this lorebook
-    if (!isCurrentUserAdmin() && name.startsWith('bb-') && !name.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
-            toastr.error('You do not have permission to modify this lorebook');
-            return;
-        }
-    }
-
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -3846,20 +3675,9 @@ export async function saveWorldInfo(name, data, immediately = false) {
     saveWorldDebounced(name, data);
 }
 
-
 async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
-
-    // Check if user has permission to rename this lorebook
-    if (!isCurrentUserAdmin() && oldName.startsWith('bb-') && !oldName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
-        if (!isAllowedBotmaker) {
-            toastr.error('You do not have permission to rename this lorebook');
-            return;
-        }
-    }
 
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
@@ -3906,16 +3724,6 @@ async function renameWorldInfo(name, data) {
 export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
-    }
-        // Check if user has permission to delete this lorebook
-    if (!isCurrentUserAdmin() && worldInfoName.startsWith('bb-') && !worldInfoName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
-            toastr.error('You do not have permission to delete this lorebook');
-            return false;
-        }
     }
 
     const response = await fetch('/api/worldinfo/delete', {
@@ -3991,19 +3799,10 @@ export function getFreeWorldName() {
  * @returns {Promise<boolean>} - True if the world info was successfully created, false otherwise
  */
 export async function createNewWorldInfo(worldName, { interactive = false } = {}) {
-        const worldInfoTemplate = { entries: {} };
+    const worldInfoTemplate = { entries: {} };
 
     if (!worldName) {
         return false;
-    }
-
-    // Check if the user is trying to create a lorebook with a protected prefix
-    const userHandle = getCurrentUserHandle();
-    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`)) {
-        if (!isCurrentUserAdmin()) {
-            toastr.error('You can only create loreBooks with your own username prefix');
-            return false;
-        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -4257,6 +4056,7 @@ function parseDecorators(content) {
  * @param {string[]} chat The chat messages to scan, in reverse order.
  * @param {number} maxContext The maximum context size of the generation.
  * @param {boolean} isDryRun Whether to perform a dry run.
+ * @param {WIGlobalScanData} globalScanData Chat independent context to be scanned
  * @typedef {object} WIActivated
  * @property {string} worldInfoBefore The world info before the chat.
  * @property {string} worldInfoAfter The world info after the chat.
@@ -4267,9 +4067,9 @@ function parseDecorators(content) {
  * @property {Set<any>} allActivatedEntries All entries.
  * @returns {Promise<WIActivated>} The world info activated.
  */
-export async function checkWorldInfo(chat, maxContext, isDryRun) {
+export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData) {
     const context = getContext();
-    const buffer = new WorldInfoBuffer(chat);
+    const buffer = new WorldInfoBuffer(chat, globalScanData);
 
     console.debug(`[WI] --- START WI SCAN (on ${chat.length} messages)${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
@@ -5127,6 +4927,12 @@ export function convertCharacterBook(characterBook) {
             sticky: entry.extensions?.sticky ?? null,
             cooldown: entry.extensions?.cooldown ?? null,
             delay: entry.extensions?.delay ?? null,
+            matchPersonaDescription: entry.extensions?.match_persona_description ?? false,
+            matchCharacterDescription: entry.extensions?.match_character_description ?? false,
+            matchCharacterPersonality: entry.extensions?.match_character_personality ?? false,
+            matchCharacterDepthPrompt: entry.extensions?.match_character_depth_prompt ?? false,
+            matchScenario: entry.extensions?.match_scenario ?? false,
+            matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
             extensions: entry.extensions ?? {},
         };
     });
@@ -5180,7 +4986,7 @@ export function checkEmbeddedWorld(chid) {
                 toastr.info(
                     'To import and use it, select "Import Card Lore" in the "More..." dropdown menu on the character panel.',
                     `${characters[chid].name} has an embedded World/Lorebook`,
-                    { timeOut: 5000, extendedTimeOut: 10000, positionClass: 'toast-top-center' },
+                    { timeOut: 5000, extendedTimeOut: 10000 },
                 );
             }
         }
@@ -5397,7 +5203,7 @@ export function openWorldInfoEditor(worldName) {
 
 /**
  * Assigns a lorebook to the current chat.
- * @param {PointerEvent} event Pointer event
+ * @param {JQuery.ClickEvent<Document, undefined, any, any>} event Pointer event
  * @returns {Promise<void>}
  */
 export async function assignLorebookToChat(event) {
@@ -5436,11 +5242,106 @@ export async function assignLorebookToChat(event) {
         saveMetadata();
     });
 
-    return callGenericPopup(template, POPUP_TYPE.TEXT);
+    await callGenericPopup(template, POPUP_TYPE.TEXT);
 }
 
-jQuery(() => {
+/**
+ * Moves a World Info entry from a source lorebook to a target lorebook.
+ *
+ * @param {string} sourceName - The name of the source lorebook file.
+ * @param {string} targetName - The name of the target lorebook file.
+ * @param {string|number} uid - The UID of the entry to move from the source lorebook.
+ * @returns {Promise<boolean>} True if the move was successful, false otherwise.
+ */
+export async function moveWorldInfoEntry(sourceName, targetName, uid) {
+    if (sourceName === targetName) {
+        return false;
+    }
 
+    if (!world_names.includes(sourceName)) {
+        toastr.error(t`Source lorebook '${sourceName}' not found.`);
+        console.error(`[WI Move] Source lorebook '${sourceName}' does not exist.`);
+        return false;
+    }
+
+    if (!world_names.includes(targetName)) {
+        toastr.error(t`Target lorebook '${targetName}' not found.`);
+        console.error(`[WI Move] Target lorebook '${targetName}' does not exist.`);
+        return false;
+    }
+
+    const entryUidString = String(uid);
+
+    try {
+        const sourceData = await loadWorldInfo(sourceName);
+        const targetData = await loadWorldInfo(targetName);
+
+        if (!sourceData || !sourceData.entries) {
+            toastr.error(t`Failed to load data for source lorebook '${sourceName}'.`);
+            console.error(`[WI Move] Could not load source data for '${sourceName}'.`);
+            return false;
+        }
+        if (!targetData || !targetData.entries) {
+            toastr.error(t`Failed to load data for target lorebook '${targetName}'.`);
+            console.error(`[WI Move] Could not load target data for '${targetName}'.`);
+            return false;
+        }
+
+        if (!sourceData.entries[entryUidString]) {
+            toastr.error(t`Entry not found in source lorebook '${sourceName}'.`);
+            console.error(`[WI Move] Entry UID ${entryUidString} not found in '${sourceName}'.`);
+            return false;
+        }
+
+        const entryToMove = structuredClone(sourceData.entries[entryUidString]);
+
+
+        const newUid = getFreeWorldEntryUid(targetData);
+        if (newUid === null) {
+            console.error(`[WI Move] Failed to get a free UID in '${targetName}'.`);
+            return false;
+        }
+
+        entryToMove.uid = newUid;
+        // Place the entry at the end of the target lorebook
+        const maxDisplayIndex = Object.values(targetData.entries).reduce((max, entry) => Math.max(max, entry.displayIndex ?? -1), -1);
+        entryToMove.displayIndex = maxDisplayIndex + 1;
+
+        targetData.entries[newUid] = entryToMove;
+
+        delete sourceData.entries[entryUidString];
+        // Remove from originalData if it exists
+        deleteWIOriginalDataValue(sourceData, entryUidString);
+        // TODO: setWIOriginalDataValue
+        console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
+
+
+        await saveWorldInfo(targetName, targetData, true);
+        console.debug(`[WI Move] Saved target lorebook '${targetName}'.`);
+        await saveWorldInfo(sourceName, sourceData, true);
+        console.debug(`[WI Move] Saved source lorebook '${sourceName}'.`);
+
+
+        console.log(`[WI Move] ${entryToMove.comment} moved successfully to '${targetName}'.`);
+
+        // Check if the currently viewed book in the editor is the source or target and reload it
+        const currentEditorBookIndex = Number($('#world_editor_select').val());
+        if (!isNaN(currentEditorBookIndex)) {
+            const currentEditorBookName = world_names[currentEditorBookIndex];
+            if (currentEditorBookName === sourceName || currentEditorBookName === targetName) {
+                reloadEditor(currentEditorBookName);
+            }
+        }
+
+        return true;
+    } catch (error) {
+        toastr.error(t`An unexpected error occurred while moving the entry: ${error.message}`);
+        console.error('[WI Move] Unexpected error:', error);
+        return false;
+    }
+}
+
+export function initWorldInfo() {
     $('#world_info').on('mousedown change', async function (e) {
         // If there's no world names, don't do anything
         if (world_names.length === 0) {
@@ -5627,7 +5528,7 @@ jQuery(() => {
     if (!isMobile()) {
         $('#world_info').select2({
             width: '100%',
-            placeholder: 'No Worlds active. Click here to select.',
+            placeholder: t`No Worlds active. Click here to select.`,
             allowClear: true,
             closeOnSelect: false,
         });
@@ -5652,119 +5553,4 @@ jQuery(() => {
             }
         });
     });
-});
-
-/**
- * Moves a World Info entry from a source lorebook to a target lorebook.
- *
- * @param {string} sourceName - The name of the source lorebook file.
- * @param {string} targetName - The name of the target lorebook file.
- * @param {string|number} uid - The UID of the entry to move from the source lorebook.
- * @returns {Promise<boolean>} True if the move was successful, false otherwise.
- */
-export async function moveWorldInfoEntry(sourceName, targetName, uid) {
-    if (sourceName === targetName) {
-        return false;
-    }
-
-    // Check permissions for source and target
-    const hasSourcePermission = isCurrentUserAdmin() ||
-                               !sourceName.startsWith('bb-') ||
-                               sourceName.startsWith(`bb-${getCurrentUserHandle()}-`) ||
-                               (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(sourceName));
-
-    const hasTargetPermission = isCurrentUserAdmin() ||
-                               !targetName.startsWith('bb-') ||
-                               targetName.startsWith(`bb-${getCurrentUserHandle()}-`) ||
-                               (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(targetName));
-
-    if (!hasSourcePermission || !hasTargetPermission) {
-        toastr.error('You do not have permission to move entries between these loreBooks');
-        return false;
-    }
-
-    if (!world_names.includes(sourceName)) {
-        toastr.error(t`Source lorebook '${sourceName}' not found.`);
-        console.error(`[WI Move] Source lorebook '${sourceName}' does not exist.`);
-        return false;
-    }
-
-    if (!world_names.includes(targetName)) {
-        toastr.error(t`Target lorebook '${targetName}' not found.`);
-        console.error(`[WI Move] Target lorebook '${targetName}' does not exist.`);
-        return false;
-    }
-
-    const entryUidString = String(uid);
-
-    try {
-        const sourceData = await loadWorldInfo(sourceName);
-        const targetData = await loadWorldInfo(targetName);
-
-        if (!sourceData || !sourceData.entries) {
-            toastr.error(t`Failed to load data for source lorebook '${sourceName}'.`);
-            console.error(`[WI Move] Could not load source data for '${sourceName}'.`);
-            return false;
-        }
-        if (!targetData || !targetData.entries) {
-            toastr.error(t`Failed to load data for target lorebook '${targetName}'.`);
-            console.error(`[WI Move] Could not load target data for '${targetName}'.`);
-            return false;
-        }
-
-        if (!sourceData.entries[entryUidString]) {
-            toastr.error(t`Entry not found in source lorebook '${sourceName}'.`);
-            console.error(`[WI Move] Entry UID ${entryUidString} not found in '${sourceName}'.`);
-            return false;
-        }
-
-        const entryToMove = structuredClone(sourceData.entries[entryUidString]);
-
-
-        const newUid = getFreeWorldEntryUid(targetData);
-        if (newUid === null) {
-            console.error(`[WI Move] Failed to get a free UID in '${targetName}'.`);
-            return false;
-        }
-
-        entryToMove.uid = newUid;
-        // Place the entry at the end of the target lorebook
-        const maxDisplayIndex = Object.values(targetData.entries).reduce((max, entry) => Math.max(max, entry.displayIndex ?? -1), -1);
-        entryToMove.displayIndex = maxDisplayIndex + 1;
-
-        targetData.entries[newUid] = entryToMove;
-
-        delete sourceData.entries[entryUidString];
-        // Remove from originalData if it exists
-        deleteWIOriginalDataValue(sourceData, entryUidString);
-        // TODO: setWIOriginalDataValue
-        console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
-
-
-        await saveWorldInfo(targetName, targetData, true);
-        console.debug(`[WI Move] Saved target lorebook '${targetName}'.`);
-        await saveWorldInfo(sourceName, sourceData, true);
-        console.debug(`[WI Move] Saved source lorebook '${sourceName}'.`);
-
-
-        console.log(`[WI Move] ${entryToMove.comment} moved successfully to '${targetName}'.`);
-
-        // Check if the currently viewed book in the editor is the source or target and reload it
-        const currentEditorBookIndex = Number($('#world_editor_select').val());
-        if (!isNaN(currentEditorBookIndex)) {
-            const currentEditorBookName = world_names[currentEditorBookIndex];
-            if (currentEditorBookName === sourceName || currentEditorBookName === targetName) {
-                reloadEditor(currentEditorBookName);
-            }
-        }
-
-        return true;
-    } catch (error) {
-        toastr.error(t`An unexpected error occurred while moving the entry: ${error.message}`);
-        console.error('[WI Move] Unexpected error:', error);
-        return false;
-    }
 }
-
-const currentUserHandle = getCurrentUserHandle();
-console.log("Current user handle:", currentUserHandle);

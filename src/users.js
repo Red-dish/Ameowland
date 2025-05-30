@@ -18,6 +18,7 @@ import { USER_DIRECTORY_TEMPLATE, DEFAULT_USER, PUBLIC_DIRECTORIES, SETTINGS_FIL
 import { getConfigValue, color, delay, generateTimestamp } from './util.js';
 import { readSecret, writeSecret } from './endpoints/secrets.js';
 import { getContentOfType } from './endpoints/content-manager.js';
+import { serverDirectory } from './server-directory.js';
 
 export const KEY_PREFIX = 'user:';
 const AVATAR_PREFIX = 'avatar:';
@@ -507,40 +508,14 @@ export async function initUserStorage(dataRoot) {
     console.log('Using data root:', color.green(dataRoot));
     await storage.init({
         dir: path.join(dataRoot, '_storage'),
-        ttl: false,
+        ttl: false, // Never expire
     });
 
     const keys = await getAllUserHandles();
 
     // If there are no users, create the default user
     if (keys.length === 0) {
-        const defaultUser = {
-            ...DEFAULT_USER,
-            created: Date.now(), // Override the frozen created timestamp
-            salt: getPasswordSalt(), // Ensure salt is set
-        };
-        await storage.setItem(toKey(DEFAULT_USER.handle), defaultUser);
-        console.log('Created default user with admin status:', defaultUser.admin);
-    } else {
-        // Check if default-user exists and ensure it has admin: true
-        const defaultUserKey = toKey(DEFAULT_USER.handle);
-        const existingUser = await storage.getItem(defaultUserKey);
-        if (existingUser) {
-            if (!existingUser.admin) {
-                existingUser.admin = true;
-                await storage.setItem(defaultUserKey, existingUser);
-                console.log('Updated default-user to admin');
-            }
-        } else {
-            // If default-user doesn't exist, create it
-            const defaultUser = {
-                ...DEFAULT_USER,
-                created: Date.now(),
-                salt: getPasswordSalt(),
-            };
-            await storage.setItem(defaultUserKey, defaultUser);
-            console.log('Created default user with admin status:', defaultUser.admin);
-        }
+        await storage.setItem(toKey(DEFAULT_USER.handle), DEFAULT_USER);
     }
 }
 
@@ -931,7 +906,7 @@ export async function loginPageMiddleware(request, response) {
         console.error('Error during auto-login:', error);
     }
 
-    return response.sendFile('login.html', { root: path.join(process.cwd(), 'public') });
+    return response.sendFile('login.html', { root: path.join(serverDirectory, 'public') });
 }
 
 /**
