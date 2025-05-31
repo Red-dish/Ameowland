@@ -54,4 +54,11 @@ public/scripts/extensions/third-party
 .aider*
 .env
 /StartDev.bat
-
+data_backup/
+/default/*
+/default/
+_cache
+cookie-secret.txt
+_storage
+_webpack
+stdata

@@ -9,7 +9,7 @@ body.login .logo {
 
 body.login #logoBlock {
     align-items: center;
-    margin: 0 auto;
+    margin: auto;
     gap: 10px;
 }
 
