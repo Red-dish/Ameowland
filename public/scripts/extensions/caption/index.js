@@ -664,3 +664,4 @@ jQuery(async function () {
 
     document.body.classList.add('caption');
 });
+
