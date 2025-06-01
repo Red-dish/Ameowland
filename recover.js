@@ -35,7 +35,7 @@ async function main() {
     await initStorage();
 
     /**
-     * @type {import('./src/users').User}
+     * @type {import('./src/users.js').User}
      */
     const user = await storage.get(toKey(userAccount));
 

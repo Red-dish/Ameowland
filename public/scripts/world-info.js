@@ -25,7 +25,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { isAdmin, getCurrentUserHandle } from './user.js';
 
 const botmakersMap = {
-    "alice": ["AliceBot1", "AliceBot2", "SharedBot"],
+    "hailey": ["bb-hailey-noah"],
     "bob": ["BobsCreation", "BobsWorld", "SharedBot"],
     "charlie": ["CharliesLore", "CharlieUniverse"]
 };
