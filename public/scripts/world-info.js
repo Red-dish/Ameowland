@@ -27,7 +27,9 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 const botmakersMap = {
     "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane"],
     "lyra": ["bb-lyra-CallumThorne"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca"]
+    "violet": ["bb-violet-alessandro", "bb-violet-luca"],
+    "retsukoh": ["bb-retsukoh-Sukuna"],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"]
 };
 
 /**
