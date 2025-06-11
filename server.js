@@ -13,3 +13,4 @@ try {
 } catch (error) {
     console.error('A critical error has occurred while starting the server:', error);
 }
+
