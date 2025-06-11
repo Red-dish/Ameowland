@@ -273,11 +273,11 @@ let power_user = {
 
     reasoning: {
         name: DEFAULT_REASONING_TEMPLATE,
-        auto_parse: false,
+        auto_parse: true,
         add_to_prompts: false,
         auto_expand: false,
         show_hidden: false,
-        prefix: '<think>\n',
+        prefix: '<think>',
         suffix: '\n</think>',
         separator: '\n\n',
         max_additions: 1,
