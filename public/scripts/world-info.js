@@ -28,7 +28,7 @@ const botmakersMap = {
     "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane"],
     "lyra": ["bb-lyra-CallumThorne"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca"],
-    "retsukoh": ["bb-retsukoh-Sukuna"],
+    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"]
 };
 
