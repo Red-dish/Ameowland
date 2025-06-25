@@ -29,7 +29,8 @@ const botmakersMap = {
     "lyra": ["bb-lyra-CallumThorne"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca"],
     "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo"],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"]
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"],
+    "dreamweaver":["bb-dreamweaver-Venryk"],
 };
 
 /**
