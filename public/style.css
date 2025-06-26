@@ -4132,6 +4132,14 @@ input[type='checkbox'].del_checkbox {
     display: flex;
 }
 
+.range-block label.checkbox_label span[data-i18n="Unlocked Context Size"] {
+    margin-bottom: 10px; 
+    display: block; /* block element to control margin/padding better */
+    font-size: 0.9em;
+    color: #9c96fa;
+    padding: 5px; 
+}
+
 .toggle-description {
     width: max-content;
     margin-left: 5px;
