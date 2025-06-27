@@ -1394,7 +1394,6 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     object-position: center center;
     border-radius: var(--avatar-base-border-radius-round);
     border: 1px solid var(--SmartThemeBorderColor);
-    /*--black30a*/
     box-shadow: 0 0 5px var(--black50a);
 }
 
@@ -1410,6 +1409,61 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     flex-wrap: wrap;
     overflow: hidden;
     max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+}
+
+/* --- Quick Character Selection ---  */
+#HotSwapWrapper .hotswap.avatars_inline {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    justify-content: center;
+    scroll-behavior: smooth;
+    max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+    -ms-overflow-style: none;
+    margin: 5px;
+    margin-right: 10px;
+    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+
+    *:focus {
+        outline: none;
+    }
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    @media screen and (max-width: 1000px) {
+        margin-right: 0;
+        justify-content: flex-start;
+    }
+}
+
+/* when using big avatars, increase the collapsed height */
+body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
+    max-height: calc(var(--avatar-base-width) * var(--big-avatar-width-factor) + 35px)
+}
+
+#HotSwapWrapper:hover .hotswap.avatars_inline {
+    /* you can tweak this 25dvh value as needed! */
+    max-height: 25dvh !important;
+    overflow: auto;
+    transition: all 1s cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    @media screen and (max-width: 1000px) {
+        /* you can tweak this 30dvh value as needed! */
+        max-height: 30dvh !important;
+    }
+}
+
+#HotSwapWrapper:not(:hover) .hotswap.avatars_inline {
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Continue with remaining styles */
+.avatars_inline_small .avatar,
+.avatars_inline_small .avatar img {
+    width: calc(var(--avatar-base-width) * var(--inline-avatar-small-factor));
+    height: calc(var(--avatar-base-height) * var(--inline-avatar-small-factor));
 }
 
 .bogus_folder_select .avatar {
