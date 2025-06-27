@@ -24,33 +24,94 @@ import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { isAdmin, getCurrentUserHandle } from './user.js';
 
-// public/scripts/world-info.js
-let userPermissions = null;
+const botmakersMap = {
+    "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane"],
+    "lyra": ["bb-lyra-CallumThorne"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca"],
+    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo"],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"],
+    "dreamweaver":["bb-dreamweaver-Venryk"],
+};
 
-async function loadUserPermissions() {
+/**
+*Checks if the current user is an admin*
+*@returns {boolean} Whether the current user is an admin*
+*/
+function isCurrentUserAdmin() {
     try {
-        const response = await fetch('/api/worldinfo/user-permissions', {
-            headers: SillyTavern.getContext().getRequestHeaders()
-        });
-        userPermissions = await response.json();
+        // Use the existing isAdmin function if available
+        if (typeof isAdmin === 'function') {
+            return isAdmin();
+        }
+
+        // Fallback to checking specific admin usernames
+        const userHandle = getCurrentUserHandle();
+        return ['admin', 'default-user'].includes(userHandle);
     } catch (error) {
-        userPermissions = { isBotmaker: false, allowedBooks: [], userHandle: 'default' };
+        console.error('[WI] Error checking admin status:', error);
+        return false;
     }
 }
 
+/**
+ *Checks if the current user is a botmaker*
+* @returns {boolean} Whether the current user is a botmaker*
+ */
 function isCurrentUserBotmaker() {
-    return userPermissions?.isBotmaker || false;
+    try {
+        const userHandle = getCurrentUserHandle();
+        return Object.keys(botmakersMap).includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking botmaker status:', error);
+        return false;
+    }
 }
 
+/**
+* Gets the list of loreBooks the current user has access to if they're a botmaker*
+ *@returns {string[]} Array of loreBook names the user has access to*
+*/
 function getBotmakerAllowedLoreBooks() {
-    return userPermissions?.allowedBooks || [];
+    try {
+        const userHandle = getCurrentUserHandle();
+        return botmakersMap[userHandle] || [];
+    } catch (error) {
+        console.error('[WI] Error getting allowed loreBooks:', error);
+        return [];
+    }
 }
 
-// Initialize when page loads
-$(document).ready(() => {
-    loadUserPermissions();
-});
+/**
+*Checks if a user has access to view a specific loreBook*
+*@param {string} lorebookName - Name of the loreBook to check access for*
+*@returns {boolean} Whether the user has access to the loreBook*
+*/
+function hasLoreBookAccess(lorebookName) {
+    // Admins have access to everything
+    if (isCurrentUserAdmin()) {
+        return true;
+    }
 
+    // Assume personal loreBooks are prefixed with "bb-username-"
+    const userHandle = getCurrentUserHandle();
+    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
+        return true; // User's personal loreBook
+    }
+
+    // Check if it's a global loreBook (no special prefix)
+    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
+        return true; // Global loreBook accessible to all
+    }
+
+    // For botmakers, check if they have access to this specific loreBook
+    if (isCurrentUserBotmaker()) {
+        const allowedBooks = getBotmakerAllowedLoreBooks();
+        return allowedBooks.includes(lorebookName);
+    }
+
+    // By default, deny access
+    return false;
+}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
