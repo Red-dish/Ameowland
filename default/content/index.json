@@ -116,6 +116,18 @@
         "type": "background"
     },
     {
+        "filename": "default_Seraphina.png",
+        "type": "character"
+    },
+    {
+        "filename": "Seraphina",
+        "type": "sprites"
+    },
+    {
+        "filename": "Eldoria.json",
+        "type": "world"
+    },
+    {
         "filename": "user-default.png",
         "type": "avatar"
     },
@@ -798,5 +810,13 @@
     {
         "filename": "presets/reasoning/Blank.json",
         "type": "reasoning"
+    },
+    {
+        "filename": "presets/instruct/Dots1.json",
+        "type": "instruct"
+    },
+    {
+        "filename": "presets/context/Dots1.json",
+        "type": "context"
     }
 ]
