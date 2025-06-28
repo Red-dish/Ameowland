@@ -5,116 +5,6 @@ import express from 'express';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-const botmakersMap = {
-    "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane"],
-    "lyra": ["bb-lyra-CallumThorne"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo"],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"],
-    "dreamweaver":["bb-dreamweaver-Venryk"],
-};
-
-/**
-*Gets user handle from request using SillyTavern's user system*
-*/
-function getUserHandleFromRequest(req) {
-    // SillyTavern populates request.user via setUserDataMiddleware
-    if (req.user && req.user.profile && req.user.profile.handle) {
-        return req.user.profile.handle;
-    }
-
-    // Fallback to default user if no user accounts are enabled
-    return 'default-user';
-}
-
-/**
- *Checks if user is admin using SillyTavern's user system*
-*/
-function checkIfUserIsAdmin(req) {
-    if (req.user && req.user.profile) {
-        // Check if user has admin flag (if your system uses this)
-        if (req.user.profile.admin === true) {
-            return true;
-        }
-
-        // Check specific admin handles
-        const adminHandles = ['admin', 'default-user'];
-        return adminHandles.includes(req.user.profile.handle);
-    }
-
-    return false;
-}
-
-/**
-*Checks if user is a botmaker*
-*/
-function checkIfUserIsBotmaker(req) {
-    const userHandle = getUserHandleFromRequest(req);
-    return Object.keys(botmakersMap).includes(userHandle);
-}
-
-/**
- *Gets allowed lorebooks for botmaker*
-*/
-function getBotmakerAllowedLoreBooks(req) {
-    const userHandle = getUserHandleFromRequest(req);
-    return botmakersMap[userHandle] || [];
-}
-
-/**
-*Checks if user has access to a specific lorebook*
-*/
-function hasLoreBookAccessPermission(req, lorebookName, requiresWrite = false) {
-    const userHandle = getUserHandleFromRequest(req);
-    const isAdmin = checkIfUserIsAdmin(req);
-    const isBotmaker = checkIfUserIsBotmaker(req);
-
-    console.log(`[RBAC] Checking access for user: ${userHandle}, lorebook: ${lorebookName}, requiresWrite: ${requiresWrite}`);
-
-    // Admins have full access
-    if (isAdmin) {
-        console.log(`[RBAC] Admin access granted for ${userHandle}`);
-        return true;
-    }
-
-    // Hidden files are admin-only
-    if (lorebookName.includes('#hidden#')) {
-        console.log(`[RBAC] Hidden file access denied for ${userHandle}`);
-        return false;
-    }
-
-    // Personal loreBooks: match username prefix
-    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
-        console.log(`[RBAC] Personal lorebook access granted for ${userHandle}`);
-        return true;
-    }
-
-    // Global loreBooks: available to everyone (no bb- prefix)
-    if (!lorebookName.startsWith('bb-')) {
-        console.log(`[RBAC] Global lorebook access granted for ${userHandle}`);
-        return true;
-    }
-
-    // Botmaker loreBooks: check permissions
-    if (isBotmaker) {
-        const allowedBooks = getBotmakerAllowedLoreBooks(req);
-        const hasAccess = allowedBooks.includes(lorebookName);
-
-        if (hasAccess) {
-            console.log(`[RBAC] Botmaker access granted for ${userHandle} to ${lorebookName}`);
-            return true;
-        } else {
-            console.log(`[RBAC] Botmaker access denied for ${userHandle} to ${lorebookName} - not in allowed list`);
-            return false;
-        }
-    }
-
-    // Default deny for user-specific loreBooks
-    console.log(`[RBAC] Default access denied for ${userHandle} to ${lorebookName}`);
-    return false;
-}
-
-
 /**
  * Reads a World Info file and returns its contents
  * @param {import('../users.js').UserDirectoryList} directories User directories
@@ -149,21 +39,10 @@ router.post('/get', (request, response) => {
         return response.sendStatus(400);
     }
 
-    const lorebookName = request.body.name;
-
-    // Check permissions
-    if (!hasLoreBookAccessPermission(request, lorebookName, false)) {
-        return response.status(403).json({
-            error: 'Access denied',
-            message: 'You do not have permission to access this lorebook'
-        });
-    }
-
-    const file = readWorldInfoFile(request.user.directories, lorebookName, true);
+    const file = readWorldInfoFile(request.user.directories, request.body.name, true);
 
     return response.send(file);
 });
-
 
 router.post('/delete', (request, response) => {
     if (!request.body?.name) {
@@ -171,15 +50,6 @@ router.post('/delete', (request, response) => {
     }
 
     const worldInfoName = request.body.name;
-
-    // Check permissions - delete requires write access
-    if (!hasLoreBookAccessPermission(request, worldInfoName, true)) {
-        return response.status(403).json({
-            error: 'Access denied',
-            message: 'You do not have permission to delete this lorebook'
-        });
-    }
-
     const filename = sanitize(`${worldInfoName}.json`);
     const pathToWorldInfo = path.join(request.user.directories.worlds, filename);
 
@@ -192,24 +62,10 @@ router.post('/delete', (request, response) => {
     return response.sendStatus(200);
 });
 
-
 router.post('/import', (request, response) => {
     if (!request.file) return response.sendStatus(400);
 
     const filename = `${path.parse(sanitize(request.file.originalname)).name}.json`;
-    const worldName = path.parse(filename).name;
-
-    // Check if user can create this lorebook based on naming conventions
-    const userHandle = getUserHandleFromRequest(request);
-    const isAdmin = checkIfUserIsAdmin(request);
-
-    // If it's a user-specific lorebook (starts with bb-), check permissions
-    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`) && !isAdmin) {
-        return response.status(403).json({
-            error: 'Access denied',
-            message: 'You can only import lorebooks with your own username prefix'
-        });
-    }
 
     let fileContents = null;
 
@@ -231,6 +87,7 @@ router.post('/import', (request, response) => {
     }
 
     const pathToNewFile = path.join(request.user.directories.worlds, filename);
+    const worldName = path.parse(pathToNewFile).name;
 
     if (!worldName) {
         return response.status(400).send('World file must have a name');
@@ -249,16 +106,6 @@ router.post('/edit', (request, response) => {
         return response.status(400).send('World file must have a name');
     }
 
-    const lorebookName = request.body.name;
-
-    // Check permissions - edit requires write access
-    if (!hasLoreBookAccessPermission(request, lorebookName, true)) {
-        return response.status(403).json({
-            error: 'Access denied',
-            message: 'You do not have permission to edit this lorebook'
-        });
-    }
-
     try {
         if (!('entries' in request.body.data)) {
             throw new Error('World info must contain an entries list');
@@ -267,7 +114,7 @@ router.post('/edit', (request, response) => {
         return response.status(400).send('Is not a valid world info file');
     }
 
-    const filename = `${sanitize(lorebookName)}.json`;
+    const filename = `${sanitize(request.body.name)}.json`;
     const pathToFile = path.join(request.user.directories.worlds, filename);
 
     let targetPath = pathToFile;
@@ -284,4 +131,3 @@ router.post('/edit', (request, response) => {
 
     return response.send({ ok: true });
 });
-
