@@ -88,7 +88,6 @@ router.post('/import', (request, response) => {
 
     const pathToNewFile = path.join(request.user.directories.worlds, filename);
     const worldName = path.parse(pathToNewFile).name;
-    const worldName = path.parse(pathToNewFile).name;
 
     if (!worldName) {
         return response.status(400).send('World file must have a name');
