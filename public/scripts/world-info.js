@@ -25,11 +25,11 @@ import { accountStorage } from './util/AccountStorage.js';
 import { isAdmin, getCurrentUserHandle } from './user.js';
 
 const botmakersMap = {
-    "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane"],
+    "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-noah", "bb-hailey-thane","bb-hailey-hypnos"],
     "lyra": ["bb-lyra-CallumThorne"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo"],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu"],
+    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso"],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
 };
 
