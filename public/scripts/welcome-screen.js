@@ -126,10 +126,12 @@ function sendAssistantMessage() {
     const message = {
         name: name,
         force_avatar: avatar,
-        mes: greeting + '\n***\n' + t`**Hint:** Set any character as your welcome page assistant from their "More..." menu.`,
+        mes: t`<h3>₊˚⊹ 🤍 Ameowra says, "Hi ! ⸜(｡˃ ᵕ ˂ )⸝♡" </h3>` + t`<p>Lets start by making sure everything works!</p>` + t`<p>Here is a checklist:</p>
+        ✦ Paste your API key correctly (Its case sensitive! Even a space will cause problems)
+        ✦ If your key is not from Electron Hub or Zanity, the settings may be look different
+        ✦ Don't be afraid to ask for help in the discord!`  + '\n***\n'+ t`Hint:Set any character as your welcome page assistant from their "More..." menu.`,
         is_system: false,
         is_user: false,
-        send_date: getMessageTimeStamp(),
         extra: {
             type: system_message_types.ASSISTANT_MESSAGE,
         },

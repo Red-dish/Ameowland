@@ -124,9 +124,7 @@
     --inline-avatar-small-factor: 0.6;
 
     --animation-duration: 125ms;
-    --animation-duration-2x: calc(var(--animation-duration) * 2);
-    --animation-duration-3x: calc(var(--animation-duration) * 3);
-    --animation-duration-slow: var(--animation-duration-3x);
+    --animation-duration-slow: calc(var(--animation-duration) * 3);
 }
 
 * {
@@ -373,6 +371,18 @@ input[type='checkbox']:focus-visible {
     border-collapse: collapse;
     padding: 0.25em;
 }
+
+.mes_text.assistant-message h2 {
+    color: #ffffff;
+    font-size: 1.4em;
+    margin-bottom: 10px;
+}
+
+.mes_text.assistant-message p {
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
 
 .mes_text p,
 .mes_reasoning p {
@@ -1415,6 +1425,61 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     flex-wrap: wrap;
     overflow: hidden;
     max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+}
+
+/* --- Quick Character Selection ---  */
+#HotSwapWrapper .hotswap.avatars_inline {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    justify-content: center;
+    scroll-behavior: smooth;
+    max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+    -ms-overflow-style: none;
+    margin: 5px;
+    margin-right: 10px;
+    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+
+    *:focus {
+        outline: none;
+    }
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    @media screen and (max-width: 1000px) {
+        margin-right: 0;
+        justify-content: flex-start;
+    }
+}
+
+/* when using big avatars, increase the collapsed height */
+body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
+    max-height: calc(var(--avatar-base-width) * var(--big-avatar-width-factor) + 35px)
+}
+
+#HotSwapWrapper:hover .hotswap.avatars_inline {
+    /* you can tweak this 25dvh value as needed! */
+    max-height: 25dvh !important;
+    overflow: auto;
+    transition: all 1s cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    @media screen and (max-width: 1000px) {
+        /* you can tweak this 30dvh value as needed! */
+        max-height: 30dvh !important;
+    }
+}
+
+#HotSwapWrapper:not(:hover) .hotswap.avatars_inline {
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Continue with remaining styles */
+.avatars_inline_small .avatar,
+.avatars_inline_small .avatar img {
+    width: calc(var(--avatar-base-width) * var(--inline-avatar-small-factor));
+    height: calc(var(--avatar-base-height) * var(--inline-avatar-small-factor));
 }
 
 .bogus_folder_select .avatar {
@@ -4137,6 +4202,14 @@ input[type='checkbox'].del_checkbox {
     flex: 1;
     gap: 5px;
     display: flex;
+}
+
+.range-block label.checkbox_label span[data-i18n="Unlocked Context Size"] {
+    margin-bottom: 10px; 
+    display: block; /* block element to control margin/padding better */
+    font-size: 0.9em;
+    color: #9c96fa;
+    padding: 5px; 
 }
 
 .toggle-description {
