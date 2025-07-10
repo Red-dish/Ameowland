@@ -7,7 +7,7 @@
 English | [German](readme-de_de.md) | [中文](readme-zh_cn.md) | [繁體中文](readme-zh_tw.md) | [日本語](readme-ja_jp.md) | [Русский](readme-ru_ru.md) | [한국어](readme-ko_kr.md)
 
 [![GitHub Stars](https://img.shields.io/github/stars/SillyTavern/SillyTavern.svg)](https://github.com/SillyTavern/SillyTavern/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/SillyTavern/SillyTavern.svg)](https://github.com/SillyTavern/SillyTavern/network)
+[![GitHub Forks](https://img.shields.io/github/forks/SillyTavern/SillyTavern.svg)](https://github.com/SillyTavern/SillyTavern/forks)
 [![GitHub Issues](https://img.shields.io/github/issues/SillyTavern/SillyTavern.svg)](https://github.com/SillyTavern/SillyTavern/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/SillyTavern/SillyTavern.svg)](https://github.com/SillyTavern/SillyTavern/pulls)
 
@@ -42,7 +42,7 @@ If you're not familiar with using the git CLI or don't understand what a branch 
 
 ## What do I need other than SillyTavern?
 
-Since SillyTavern is only an interface, you will need access to an LLM backend to provide inference. You can use AI Horde for instant out-of-the-box chatting. Aside from that, we support many other local and cloud-based LLM backends: OpenAI-compatible API, KoboldAI, Tabby, and many more. You can read more about our supported APIs in [the FAQ](https://docs.sillytavern.app/usage/api-connections/).
+Since SillyTavern is only an interface, you will need access to an LLM backend to provide inference. You can use AI Horde for instant out-of-the-box chatting. Aside from that, we support many other local and cloud-based LLM backends: OpenAI-compatible API, KoboldAI, Tabby, and many more. You can read more about our supported APIs in [the Docs](https://docs.sillytavern.app/usage/api-connections/).
 
 ### Do I need a powerful PC to run SillyTavern?
 
@@ -83,9 +83,7 @@ Or get in touch with the developers directly:
 
 SillyTavern is built around the concept of "character cards". A character card is a collection of prompts that set the behavior of the LLM and is required to have persistent conversations in SillyTavern. They function similarly to ChatGPT's GPTs or Poe's bots. The content of a character card can be anything: an abstract scenario, an assistant tailored for a specific task, a famous personality or a fictional character.
 
-The name field is the only required character card input. To start a neutral conversation with the language model, create a new card simply called "Assistant" and leave the rest of the boxes blank. For a more themed chat, you can provide the language model with various background details, behavior and writing patterns, and a scenario to jump start the chat.
-
-To have a quick conversation without selecting a character card or to just test the LLM connection, simply type your prompt input into the input bar on the Welcome Screen after opening SillyTavern. Please note that such chats are temporary and will not be saved.
+To have a quick conversation without selecting a character card or to just test the LLM connection, simply type your prompt input into the input bar on the Welcome Screen after opening SillyTavern. This will create an empty "Assistant" character card that you can customize later.
 
 To get a general idea on how to define character cards, see the default character (Seraphina) or download selected community-made cards from the "Download Extensions & Assets" menu.
 
@@ -234,6 +232,28 @@ docker run \
 
 We have a comprehensive guide on using SillyTavern in Docker [here](http://docs.sillytavern.app/installation/docker/) which covers installations on Windows, macOS and Linux! Give it a read if you wish to build the image yourself.
 
+### Common issues with Docker
+
+#### SELinux Permission Issues with Mounted Volumes
+
+Linux distributions with SELinux enabled (such as RHEL, CentOS, Fedora, etc.) may prevent Docker containers from accessing mounted volumes due to security policies. This can result in permission denied errors when the container tries to read or write to the mounted directories.
+
+Two suffixes `:z` or `:Z` can be added to the volume mount. These suffixes tell Docker to relabel file objects on the shared volumes.
+
+* The `z` option is used when the volume content will be shared between containers.
+* The `Z` option is used when the volume content should only be used by the current container.
+
+Example:
+
+```yaml
+# docker-compose.yml
+volumes:
+  ## Shared volume
+  - ./config:/home/node/app/config:z
+  ## Private volume
+  - ./data:/home/node/app/data:Z
+```
+
 ## ⚡ Installing via SillyTavern Launcher
 
 SillyTavern Launcher is an installation wizard that will help you get setup with many options, including installing a backend for local inference.
@@ -316,18 +336,6 @@ chmod +x launcher.sh && ./launcher.sh
 
 **Unsupported platform: android arm LEtime-web.** 32-bit Android requires an external dependency that can't be installed with npm. Use the following command to install it: `pkg install esbuild`. Then run the usual installation steps.
 
-## API keys management
-
-SillyTavern saves your API keys to a `secrets.json` file in the user data directory (`/data/default-user/secrets.json` is the default path).
-
-By default, API keys will not be visible from the interface after you have saved them and refreshed the page.
-
-In order to enable viewing your keys:
-
-1. Set the value of `allowKeysExposure` to `true` in `config.yaml` file.
-2. Restart the SillyTavern server.
-3. Click the 'View hidden API keys' link at the bottom right of the API Connection Panel.
-
 ## Command-line arguments
 
 You can pass command-line arguments to SillyTavern server startup to override some settings in `config.yaml`.
@@ -347,31 +355,32 @@ Start.bat --port 8000 --listen false
 > \[!TIP]
 > None of the arguments are required. If you don't provide them, SillyTavern will use the settings in `config.yaml`.
 
-| Option                  | Description                                                          | Type     |
-|-------------------------|----------------------------------------------------------------------|----------|
-| `--version`             | Show version number                                                  | boolean  |
-| `--dataRoot`            | Root directory for data storage                                      | string   |
-| `--port`                | Sets the port under which SillyTavern will run                       | number   |
-| `--listen`              | SillyTavern will listen on all network interfaces                    | boolean  |
-| `--whitelist`           | Enables whitelist mode                                               | boolean  |
-| `--basicAuthMode`       | Enables basic authentication                                         | boolean  |
-| `--enableIPv4`          | Enables IPv4 protocol                                                | boolean  |
-| `--enableIPv6`          | Enables IPv6 protocol                                                | boolean  |
-| `--listenAddressIPv4`   | Specific IPv4 address to listen to                                   | string   |
-| `--listenAddressIPv6`   | Specific IPv6 address to listen to                                   | string   |
-| `--dnsPreferIPv6`       | Prefers IPv6 for DNS                                                 | boolean  |
-| `--ssl`                 | Enables SSL                                                          | boolean  |
-| `--certPath`            | Path to your certificate file                                        | string   |
-| `--keyPath`             | Path to your private key file                                        | string   |
-| `--autorun`             | Automatically launch SillyTavern in the browser                      | boolean  |
-| `--autorunHostname`     | Autorun hostname                                                     | string   |
-| `--autorunPortOverride` | Overrides the port for autorun                                       | string   |
-| `--avoidLocalhost`      | Avoids using 'localhost' for autorun in auto mode                    | boolean  |
-| `--corsProxy`           | Enables CORS proxy                                                   | boolean  |
-| `--requestProxyEnabled` | Enables a use of proxy for outgoing requests                         | boolean  |
-| `--requestProxyUrl`     | Request proxy URL (HTTP or SOCKS protocols)                          | string   |
-| `--requestProxyBypass`  | Request proxy bypass list (space separated list of hosts)            | array    |
-| `--disableCsrf`         | Disables CSRF protection (NOT RECOMMENDED)                           | boolean  |
+| Option                          | Description                                                          | Type     |
+|---------------------------------|----------------------------------------------------------------------|----------|
+| `--version`                     | Show version number                                                  | boolean  |
+| `--configPath`                  | Override the path to the config.yaml file                            | string   |
+| `--dataRoot`                    | Root directory for data storage                                      | string   |
+| `--port`                        | Sets the port under which SillyTavern will run                       | number   |
+| `--listen`                      | SillyTavern will listen on all network interfaces                    | boolean  |
+| `--whitelist`                   | Enables whitelist mode                                               | boolean  |
+| `--basicAuthMode`               | Enables basic authentication                                         | boolean  |
+| `--enableIPv4`                  | Enables IPv4 protocol                                                | boolean  |
+| `--enableIPv6`                  | Enables IPv6 protocol                                                | boolean  |
+| `--listenAddressIPv4`           | Specific IPv4 address to listen to                                   | string   |
+| `--listenAddressIPv6`           | Specific IPv6 address to listen to                                   | string   |
+| `--dnsPreferIPv6`               | Prefers IPv6 for DNS                                                 | boolean  |
+| `--ssl`                         | Enables SSL                                                          | boolean  |
+| `--certPath`                    | Path to your certificate file                                        | string   |
+| `--keyPath`                     | Path to your private key file                                        | string   |
+| `--browserLaunchEnabled`        | Automatically launch SillyTavern in the browser                      | boolean  |
+| `--browserLaunchHostname`       | Browser launch hostname                                              | string   |
+| `--browserLaunchPort`           | Overrides the port for browser launch                                | string   |
+| `--browserLaunchAvoidLocalhost` | Avoids using 'localhost' for browser launch in auto mode             | boolean  |
+| `--corsProxy`                   | Enables CORS proxy                                                   | boolean  |
+| `--requestProxyEnabled`         | Enables a use of proxy for outgoing requests                         | boolean  |
+| `--requestProxyUrl`             | Request proxy URL (HTTP or SOCKS protocols)                          | string   |
+| `--requestProxyBypass`          | Request proxy bypass list (space separated list of hosts)            | array    |
+| `--disableCsrf`                 | Disables CSRF protection (NOT RECOMMENDED)                           | boolean  |
 
 ## Remote connections
 
@@ -379,32 +388,7 @@ Most often this is for people who want to use SillyTavern on their mobile phones
 
 Read the detailed guide on how to set up remote connections in the [Docs](https://docs.sillytavern.app/usage/remoteconnections/).
 
-You may also want to configure SillyTavern user profiles with (optional) password protection: [Users](https://docs.sillytavern.app/installation/st-1.12.0-migration-guide/#users).
-
-## Performance issues?
-
-### General tips
-
-1. Disable the Blur Effect and enable Reduced Motion on the User Settings panel (UI Theme toggles category).
-2. If using response streaming, set the streaming FPS to a lower value (10-15 FPS is recommended).
-3. Make sure the browser is enabled to use GPU acceleration for rendering.
-
-### Input lag
-
-Performance degradation, particularly input lag, is most commonly attributed to browser extensions. Known problematic extensions include:
-
-* iCloud Password Manager
-* DeepL Translation
-* AI-based grammar correction tools
-* Various ad-blocking extensions
-
-If you experience performance issues and cannot identify the cause, or suspect an issue with SillyTavern itself, please:
-
-1. [Record a performance profile](https://developer.chrome.com/docs/devtools/performance/reference)
-2. Export the profile as a JSON file
-3. Submit it to the development team for analysis
-
-We recommend first testing with all browser extensions and third-party SillyTavern extensions disabled to isolate the source of the performance degradation.
+You may also want to configure SillyTavern user profiles with (optional) password protection: [Users](https://docs.sillytavern.app/administration/multi-user/).
 
 ## License and credits
 

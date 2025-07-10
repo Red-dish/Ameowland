@@ -16,16 +16,28 @@ protocol:
     ipv6: false
 # Prefers IPv6 for DNS. Enable this on ISPs that don't have issues with IPv6
 dnsPreferIPv6: false
-# The hostname that autorun opens.
-# - Use "auto" to let the server decide
-# - Use options like 'localhost', 'st.example.com'
-autorunHostname: "auto"
+# -- BROWSER LAUNCH CONFIGURATION --
+browserLaunch:
+  # Open the browser automatically on server startup.
+  enabled: true
+  # Browser to use for opening the URL.
+  # NOT SUPPORTED ON ANDROID DEVICES.
+  # - Use "default" to use the system default browser
+  # - Use "firefox", "chrome", "edge"
+  browser: 'default'
+  # Overrides the hostname that opens in the browser.
+  # - Use "auto" to let the server decide
+  # - Use options like 'localhost', 'st.example.com'
+  hostname: 'auto'
+  # Overrides the port for run in the browser.
+  # - Use -1 to use the server port.
+  # - Specify a port to override the default.
+  port: -1
+  # Avoids using 'localhost' as the hostname in auto mode.
+  # Use if you don't have 'localhost' in your hosts file
+  avoidLocalhost: false
 # Server port
 port: 8000
-# Overrides the port for autorun in browser.
-# - Use -1 to use the server port.
-# - Specify a port to override the default.
-autorunPortOverride: -1
 # -- SSL options --
 ssl:
   enabled: false
@@ -33,9 +45,9 @@ ssl:
   keyPath: "./certs/privkey.pem"
 # -- SECURITY CONFIGURATION --
 # Toggle whitelist mode
-whitelistMode: false
+whitelistMode: true
 # Whitelist will also verify IP in X-Forwarded-For / X-Real-IP headers
-enableForwardedWhitelist: false
+enableForwardedWhitelist: true
 # Whitelist of allowed IP addresses
 whitelist:
   - ::1
@@ -61,16 +73,16 @@ requestProxy:
     - localhost
     - 127.0.0.1
 # Enable multi-user mode
-enableUserAccounts: true
+enableUserAccounts: false
 # Enable discreet login mode: hides user list on the login screen
-enableDiscreetLogin: true
+enableDiscreetLogin: false
 # Enable's authlia based auto login. Only enable this if you
 # have setup and installed Authelia as a middle-ware on your
 # reverse proxy
 # https://www.authelia.com/
 # This will use auto login to an account with the same username
 # as that used for authlia. (Ensure the username in authlia
-# is an exact match with that in sillytavern)
+# is an exact match in lowercase with that in sillytavern)
 autheliaAuth: false
 # If `basicAuthMode` and this are enabled then
 # the username and passwords for basic auth are the same as those
@@ -98,12 +110,6 @@ rateLimiting:
   # Use X-Real-IP header instead of socket IP for rate limiting
   # Only enable this if you are using a properly configured reverse proxy (like Nginx/traefik/Caddy)
   preferRealIpHeader: false
-# -- ADVANCED CONFIGURATION --
-# Open the browser automatically
-autorun: true
-# Avoids using 'localhost' for autorun in auto mode.
-# use if you don't have 'localhost' in your hosts file
-avoidLocalhost: false
 
 ## BACKUP CONFIGURATION
 backups:
@@ -234,6 +240,14 @@ claude:
   # should be ideal for most use cases.
   # Any value other than a non-negative integer will be ignored and caching at depth will not be enabled.
   cachingAtDepth: -1
+  # Use 1h TTL instead of the default 5m.
+  ## 5m: base price x 1.25
+  ## 1h: base price x 2
+  extendedTTL: false
+# -- GOOGLE GEMINI API CONFIGURATION --
+gemini:
+  # API endpoint version ("v1beta" or "v1alpha")
+  apiVersion: 'v1beta'
 # -- SERVER PLUGIN CONFIGURATION --
 enableServerPlugins: false
 # Attempt to automatically update server plugins on startup

@@ -49,7 +49,7 @@ import { FILTER_TYPES } from './filters.js';
 import { PARSER_FLAG, SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
-import { AUTOCOMPLETE_SELECT_KEY, AUTOCOMPLETE_WIDTH } from './autocomplete/AutoComplete.js';
+import { AUTOCOMPLETE_SELECT_KEY, AUTOCOMPLETE_STATE, AUTOCOMPLETE_WIDTH } from './autocomplete/AutoComplete.js';
 import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandEnumValue.js';
 import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCommonEnumsProvider.js';
 import { POPUP_TYPE, callGenericPopup, fixToastrForDialogs } from './popup.js';
@@ -124,7 +124,6 @@ export const persona_description_positions = {
 };
 
 let power_user = {
-    spoiler_free_mode: true,
     charListGrid: false,
     tokenizer: tokenizers.BEST_MATCH,
     token_padding: 64,
@@ -202,10 +201,10 @@ let power_user = {
     timer_enabled: true,
     timestamps_enabled: true,
     timestamp_model_icon: false,
-    mesIDDisplay_enabled: true,
+    mesIDDisplay_enabled: false,
     hideChatAvatars_enabled: false,
     max_context_unlocked: false,
-    message_token_count_enabled: true,
+    message_token_count_enabled: false,
     expand_message_actions: false,
     enableZenSliders: false,
     enableLabMode: false,
@@ -307,6 +306,7 @@ let power_user = {
     stscript: {
         matching: 'fuzzy',
         autocomplete: {
+            state: AUTOCOMPLETE_STATE.ALWAYS,
             autoHide: false,
             style: 'theme',
             font: {
@@ -328,7 +328,7 @@ let power_user = {
     compact_input_area: true,
     show_swipe_num_all_messages: false,
     auto_connect: false,
-    auto_load_chat: true,
+    auto_load_chat: false,
     forbid_external_media: true,
     external_media_allowed_overrides: [],
     external_media_forbidden_overrides: [],
@@ -1506,6 +1506,9 @@ async function loadPowerUserSettings(settings, data) {
         if (power_user.stscript.autocomplete === undefined) {
             power_user.stscript.autocomplete = defaultStscript.autocomplete;
         } else {
+            if (power_user.stscript.autocomplete.state === undefined) {
+                power_user.stscript.autocomplete.state = defaultStscript.autocomplete.state;
+            }
             if (power_user.stscript.autocomplete.width === undefined) {
                 power_user.stscript.autocomplete.width = defaultStscript.autocomplete.width;
             }
@@ -1643,6 +1646,7 @@ async function loadPowerUserSettings(settings, data) {
     $('#aux_field').val(power_user.aux_field);
     $('#tag_import_setting').val(power_user.tag_import_setting);
 
+    $('#stscript_autocomplete_state').val(power_user.stscript.autocomplete.state).trigger('input');
     $('#stscript_autocomplete_autoHide').prop('checked', power_user.stscript.autocomplete.autoHide ?? false).trigger('input');
     $('#stscript_matching').val(power_user.stscript.matching ?? 'fuzzy');
     $('#stscript_autocomplete_style').val(power_user.stscript.autocomplete.style ?? 'theme');
@@ -3869,6 +3873,11 @@ $(document).ready(() => {
     $('#tag_import_setting').on('change', function () {
         const value = $(this).find(':selected').val();
         power_user.tag_import_setting = Number(value);
+        saveSettingsDebounced();
+    });
+
+    $('#stscript_autocomplete_state').on('input', function () {
+        power_user.stscript.autocomplete.state = Number($(this).val());
         saveSettingsDebounced();
     });
 
