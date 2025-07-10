@@ -1,0 +1,23 @@
+const botmakersMap = {
+    "hailey": ["bb-hailey-noah"],
+    "bob": ["BobsCreation", "BobsWorld", "SharedBot"],
+    "charlie": ["CharliesLore", "CharlieUniverse"]
+};
+
+/**
+*Gets the allowed lorebooks for a specific botmaker*
+*@param {string} userHandle - The user handle to check*
+*@returns {string[]} Array of allowed lorebook names, or empty array if not a botmaker*
+*/
+export function getBotmakerAllowedLoreBooks(userHandle) {
+    return botmakersMap[userHandle] || [];
+}
+
+/**
+ *Checks if a user is a botmaker*
+* @param {string} userHandle - The user handle to check*
+ *@returns {boolean} Whether the user is a botmaker*
+*/
+export function isBotmaker(userHandle) {
+    return Object.keys(botmakersMap).includes(userHandle);
+}
