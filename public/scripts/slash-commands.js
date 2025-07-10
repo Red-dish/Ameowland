@@ -1833,7 +1833,23 @@ export function initDefaultSlashCommands() {
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'model',
-        callback: modelCallback,
+        callback: async function(args, modelName) {  
+            // Get the current result from the existing model callback  
+            const result = await modelCallback(args, modelName);  
+            
+            // Add code to connect to the API based on the current API type  
+            if (main_api === 'openai') {  
+                $('#api_button_openai').trigger('click');  
+            } else if (main_api === 'textgenerationwebui') {  
+                $('#api_button_textgenerationwebui').trigger('click');  
+            } else if (main_api === 'novel') {  
+                $('#api_button_novel').trigger('click');  
+            } else if (main_api === 'kobold') {  
+                $('#api_button').trigger('click');  
+            }  
+            
+            return result;  
+        },  
         returns: 'current model',
         namedArgumentList: [
             SlashCommandNamedArgument.fromProps({
@@ -1843,6 +1859,13 @@ export function initDefaultSlashCommands() {
                 defaultValue: 'false',
                 enumList: commonEnumProviders.boolean('trueFalse')(),
             }),
+            SlashCommandNamedArgument.fromProps({  
+                name: 'connect',  
+                description: 'connect to the API after setting the model',  
+                typeList: [ARGUMENT_TYPE.BOOLEAN],  
+                defaultValue: 'true',  
+                enumList: commonEnumProviders.boolean('trueFalse')(),  
+            }),  
         ],
         unnamedArgumentList: [
             SlashCommandArgument.fromProps({
@@ -1851,7 +1874,7 @@ export function initDefaultSlashCommands() {
                 enumProvider: () => getModelOptions(true)?.options?.map(option => new SlashCommandEnumValue(option.value, option.value !== option.text ? option.text : null)) ?? [],
             }),
         ],
-        helpString: 'Sets the model for the current API. Gets the current model name if no argument is provided.',
+        helpString: 'Sets the model for the current API and optionally connects to it. Gets the current model name if no argument is provided.',  
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'getpromptentry',
