@@ -31,6 +31,7 @@ const botmakersMap = {
     "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
+    "zelle":["bb-zelle-zayne"],
 };
 
 /**
