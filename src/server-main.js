@@ -106,6 +106,7 @@ try {
 const app = express();
 app.use(helmet({
     contentSecurityPolicy: false,
+    contentTypeOptions: false,
 }));
 app.use(compression());
 app.use(responseTime());
