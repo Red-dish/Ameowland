@@ -5636,7 +5636,7 @@
                             <hr>
                             <div id="description_div" class="title_restorable">
                                 <div class="flex-container alignitemscenter">
-                                    <span data-i18n="Character Description" class="mdhotkey_location">Description</span>
+                                    <span data-i18n="Character Description" class="mdhotkey_location">STOP. THIS IS A BOT MAKER ONLY ZONE. DO NOT EDIT</span>
                                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="description_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                     <a href="https://docs.sillytavern.app/usage/core-concepts/characterdesign/#character-description" class="notes-link" target="_blank">
                                         <span class="fa-solid fa-circle-question note-link-span"></span>
@@ -6179,16 +6179,23 @@
                         <span class="character_name"></span>:
                     </h3>
                 </div>
-                <h4 data-i18n="Primary Lorebook">Primary Lorebook</h4>
-                <div class="range-block-counter justifyLeft flex-container flexFlowColumn margin-bot-10px">
-                    <span data-i18n="A selected World Info will be bound to this character as its own Lorebook.">A selected World Info will be bound to this character as its own Lorebook.</span>
-                    <span data-i18n="When generating an AI reply, it will be combined with the entries from a global World Info selector.">When generating an AI reply, it will be combined with the entries from a global World Info selector.</span>
-                    <span data-i18n="Exporting a character would also export the selected Lorebook file embedded in the JSON data.">Exporting a character would also export the selected Lorebook file embedded in the JSON data.</span>
-                </div>
-                <div class="range-block-range wide100p">
-                    <select class="character_world_info_selector wide100p">
-                        <option value="">--- None ---</option>
-                    </select>
+                <div class="inline-drawer">  
+                    <div class="inline-drawer-toggle inline-drawer-header">  
+                        <h4 data-i18n="Primary Lorebook">Primary Lorebook</h4>  
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>  
+                    </div>  
+                    <div class="inline-drawer-content">  
+                        <div class="range-block-counter justifyLeft flex-container flexFlowColumn margin-bot-10px">  
+                            <span data-i18n="A selected World Info will be bound to this character as its own Lorebook.">IF YOU ARE NOT THIS BOT'S CREATOR, DO NOT EDIT THIS.</span>  
+                            <span data-i18n="When generating an AI reply, it will be combined with the entries from a global World Info selector.">ADDITIONAL LOREBOOKS IN THE ADDITIONAL LOREBOOKS SECTION BELOW.</span>  
+                            <span data-i18n="Exporting a character would also export the selected Lorebook file embedded in the JSON data."> !!! SKIP THIS SECTION IF YOU ARE NOT THIS BOT'S CREATOR !!!</span>  
+                        </div>  
+                        <div class="range-block-range wide100p">  
+                            <select class="character_world_info_selector wide100p">  
+                                <option value="">--- None ---</option>  
+                            </select>  
+                        </div>  
+                    </div>  
                 </div>
                 <div class="range-block-title">
                     <h4>
