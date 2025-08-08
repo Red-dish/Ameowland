@@ -420,25 +420,6 @@ select.keyselect+span.select2-container .select2-selection--multiple {
     font-style: italic;
 }
 
-.wi-transfer-modal .wi-copy-btn.menu_button {
-    padding: 8px 16px;
-    margin-left: 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    background-color: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeBodyColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    transition: background-color var(--animation-duration-fast);
-}
-
-.wi-transfer-modal .wi-copy-btn.menu_button:hover {
-    background-color: var(--white30a);
-}
-
-.wi-is-copy .wi-transfer-modal .wi-copy-btn.menu_button {
-    background-color: var(--SmartThemeEmColor);
-}
-
 /* Ensure transfer button is processed only once */
 #world_popup_entries_list .world_entry.wi-transfer-processed .wi-transfer-btn {
     /* Additional styling if needed */

@@ -6055,7 +6055,7 @@ const initWITransfer = () => {
         }  
         const transferBtn = document.createElement('i');
         transferBtn.classList.add('wi-transfer-btn', 'menu_button', 'fa-solid', 'fa-truck-arrow-right');
-        transferBtn.title = 'Move or copy world info entry into another book';
+        transferBtn.title = 'Copy world info entry to another book';
         tpl.querySelector('.duplicate_entry_button').insertAdjacentElement('beforebegin', transferBtn);
     };
     alterTemplate();
@@ -6073,7 +6073,7 @@ const initWITransfer = () => {
                 dom.classList.add('wi-transfer-modal');
                 
                 const title = document.createElement('h3');
-                title.textContent = 'Move World Info Entry';
+                title.textContent = 'Copy World Info Entry';
                 dom.append(title);
                 
                 const subTitle = document.createElement('h4');
@@ -6106,26 +6106,20 @@ const initWITransfer = () => {
                 
                 const hintP = document.createElement('p');
                 const hint = document.createElement('small');
-                hint.textContent = 'CLICK THE COPY BUTTON, the Delete and Move button deletes the entry from the source book.';
+                hint.textContent = 'Select the destination book and click Copy to duplicate this entry.';
                 hintP.append(hint);
                 dom.append(hintP);
                 
-                const dlg = new Popup(dom, POPUP_TYPE.CONFIRM, null, { okButton: 'Delete and Move', cancelButton: 'Cancel' });
-                const copyBtn = document.createElement('div');
-                copyBtn.classList.add('wi-copy-btn', 'menu_button');
-                copyBtn.textContent = 'Copy';
-                copyBtn.addEventListener('click', () => {
-                    isCopy = true;
-                    dlg.completeAffirmative();
-                });
-                (dlg.ok ?? dlg.okButton).insertAdjacentElement('afterend', copyBtn);
+                const dlg = new Popup(dom, POPUP_TYPE.CONFIRM, null, { okButton: 'Copy', cancelButton: 'Cancel' });
+                // Always set isCopy to true since we only support copying now
+                isCopy = true;
                 
                 const prom = dlg.show();
                 sel.focus();
                 await prom;
                 
                 if (dlg.result == POPUP_RESULT.AFFIRMATIVE) {
-                    toastr.info('Transferring WI Entry');
+                    toastr.info('Copying WI Entry');
                     const srcName = document.querySelector('#world_editor_select').selectedOptions[0].textContent;
                     const dstName = sel.selectedOptions[0].textContent;
                     if (srcName == dstName) {
@@ -6164,7 +6158,7 @@ const initWITransfer = () => {
                             }
                         }
                         
-                        toastr.info('Almost transferred...');
+                        toastr.info('Almost copied...');
                         document.querySelector('#world_editor_select').value = '';
                         document.querySelector('#world_editor_select').dispatchEvent(new Event('change', { bubbles: true }));
                         await new Promise(resolve => setTimeout(resolve, 100));
@@ -6179,7 +6173,7 @@ const initWITransfer = () => {
                             document.querySelector('#world_info_pagination .paginationjs-next').click();
                             await saveProm;
                         }
-                        toastr.success('Transferred WI Entry');
+                        toastr.success('Copied WI Entry');
                     } else {
                         toastr.error('Something went wrong');
                     }
