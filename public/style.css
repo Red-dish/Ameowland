@@ -5437,6 +5437,18 @@ body:has(#character_popup.open) #top-settings-holder:has(.drawer-content.openDra
     cursor: pointer;
 }
 
+#p-lb {
+    filter: saturate(0.5);
+margin-right: 1em;
+opacity: 0.25;
+transition: 200ms;
+        &:hover {
+    opacity: 1;
+    filter: saturate(1.0);
+}
+}
+
+
 .inline-drawer-content {
     display: none;
 }
