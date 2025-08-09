@@ -1,1892 +1,1011 @@
-// Move chat functions here from script.js (eventually)
+import fs from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
+import process from 'node:process';
 
-import { Popper, css, DOMPurify } from '../lib.js';
+import express from 'express';
+import sanitize from 'sanitize-filename';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import _ from 'lodash';
+
+import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import {
-    addCopyToCodeBlocks,
-    appendMediaToMessage,
-    characters,
-    chat,
-    eventSource,
-    event_types,
-    getCurrentChatId,
-    getRequestHeaders,
-    hideSwipeButtons,
-    name1,
-    name2,
-    reloadCurrentChat,
-    saveChatDebounced,
-    saveSettingsDebounced,
-    showSwipeButtons,
-    this_chid,
-    saveChatConditional,
-    chat_metadata,
-    neutralCharacterName,
-    updateChatMetadata,
-    system_message_types,
-    converter,
-    substituteParams,
-    getSystemMessageByType,
-    printMessages,
-    clearChat,
-} from '../script.js';
-import { selected_group } from './group-chats.js';
-import { power_user } from './power-user.js';
-import {
-    extractTextFromHTML,
-    extractTextFromMarkdown,
-    extractTextFromPDF,
-    extractTextFromEpub,
-    getBase64Async,
-    getStringHash,
-    humanFileSize,
-    saveBase64AsFile,
-    extractTextFromOffice,
-    download,
-    getFileText,
-} from './utils.js';
-import { extension_settings, renderExtensionTemplateAsync, saveMetadataDebounced } from './extensions.js';
-import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
-import { ScraperManager } from './scrapers.js';
-import { DragAndDropHandler } from './dragdrop.js';
-import { renderTemplateAsync } from './templates.js';
-import { t } from './i18n.js';
-import { humanizedDateTime } from './RossAscends-mods.js';
-import { accountStorage } from './util/AccountStorage.js';
+    getConfigValue,
+    humanizedISO8601DateTime,
+    tryParse,
+    generateTimestamp,
+    removeOldBackups,
+    formatBytes,
+} from '../util.js';
+
+const isBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
+const maxTotalChatBackups = Number(getConfigValue('backups.chat.maxTotalBackups', -1, 'number'));
+const throttleInterval = Number(getConfigValue('backups.chat.throttleInterval', 10_000, 'number'));
+const checkIntegrity = !!getConfigValue('backups.chat.checkIntegrity', true, 'boolean');
+
+export const CHAT_BACKUPS_PREFIX = 'chat_';
 
 /**
- * @typedef {Object} FileAttachment
- * @property {string} url File URL
- * @property {number} size File size
- * @property {string} name File name
- * @property {number} created Timestamp
- * @property {string} [text] File text
+ * Saves a chat to the backups directory.
+ * @param {string} directory The user's backups directory.
+ * @param {string} name The name of the chat.
+ * @param {string} chat The serialized chat to save.
  */
-
-/**
- * @typedef {function} ConverterFunction
- * @param {File} file File object
- * @returns {Promise<string>} Converted file text
- */
-
-const fileSizeLimit = 1024 * 1024 * 500; // 500 MB
-const ATTACHMENT_SOURCE = {
-    GLOBAL: 'global',
-    CHARACTER: 'character',
-    CHAT: 'chat',
-};
-
-/**
- * @type {Record<string, ConverterFunction>} File converters
- */
-const converters = {
-    'application/pdf': extractTextFromPDF,
-    'text/html': extractTextFromHTML,
-    'text/markdown': extractTextFromMarkdown,
-    'application/epub+zip': extractTextFromEpub,
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': extractTextFromOffice,
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': extractTextFromOffice,
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': extractTextFromOffice,
-    'application/vnd.oasis.opendocument.text': extractTextFromOffice,
-    'application/vnd.oasis.opendocument.presentation': extractTextFromOffice,
-    'application/vnd.oasis.opendocument.spreadsheet': extractTextFromOffice,
-};
-
-/**
- * Finds a matching key in the converters object.
- * @param {string} type MIME type
- * @returns {string} Matching key
- */
-function findConverterKey(type) {
-    return Object.keys(converters).find((key) => {
-        // Match exact type
-        if (type === key) {
-            return true;
-        }
-
-        // Match wildcards
-        if (key.endsWith('*')) {
-            return type.startsWith(key.substring(0, key.length - 1));
-        }
-
-        return false;
-    });
-}
-
-/**
- * Determines if the file type has a converter function.
- * @param {string} type MIME type
- * @returns {boolean} True if the file type is convertible, false otherwise.
- */
-function isConvertible(type) {
-    return Boolean(findConverterKey(type));
-}
-
-/**
- * Gets the converter function for a file type.
- * @param {string} type MIME type
- * @returns {ConverterFunction} Converter function
- */
-function getConverter(type) {
-    const key = findConverterKey(type);
-    return key && converters[key];
-}
-
-/**
- * Mark a range of messages as hidden ("is_system") or not.
- * @param {number} start Starting message ID
- * @param {number} end Ending message ID (inclusive)
- * @param {boolean} unhide If true, unhide the messages instead.
- * @param {string} nameFitler Optional name filter
- * @returns {Promise<void>}
- */
-export async function hideChatMessageRange(start, end, unhide, nameFitler = null) {
-    if (isNaN(start)) return;
-    if (!end) end = start;
-    const hide = !unhide;
-
-    for (let messageId = start; messageId <= end; messageId++) {
-        const message = chat[messageId];
-        if (!message) continue;
-        if (nameFitler && message.name !== nameFitler) continue;
-
-        message.is_system = hide;
-
-        // Also toggle "hidden" state for all visible messages
-        const messageBlock = $(`.mes[mesid="${messageId}"]`);
-        if (!messageBlock.length) continue;
-        messageBlock.attr('is_system', String(hide));
-    }
-
-    // Reload swipes. Useful when a last message is hidden.
-    hideSwipeButtons();
-    showSwipeButtons();
-
-    saveChatDebounced();
-}
-
-/**
- * Mark message as hidden (system message).
- * @deprecated Use hideChatMessageRange.
- * @param {number} messageId Message ID
- * @param {JQuery<Element>} _messageBlock Unused
- * @returns {Promise<void>}
- */
-export async function hideChatMessage(messageId, _messageBlock) {
-    return hideChatMessageRange(messageId, messageId, false);
-}
-
-/**
- * Mark message as visible (non-system message).
- * @deprecated Use hideChatMessageRange.
- * @param {number} messageId Message ID
- * @param {JQuery<Element>} _messageBlock Unused
- * @returns {Promise<void>}
- */
-export async function unhideChatMessage(messageId, _messageBlock) {
-    return hideChatMessageRange(messageId, messageId, true);
-}
-
-/**
- * Adds a file attachment to the message.
- * @param {object} message Message object
- * @returns {Promise<void>} A promise that resolves when file is uploaded.
- */
-export async function populateFileAttachment(message, inputId = 'file_form_input') {
+function backupChat(directory, name, chat) {
     try {
-        if (!message) return;
-        if (!message.extra) message.extra = {};
-        const fileInput = document.getElementById(inputId);
-        if (!(fileInput instanceof HTMLInputElement)) return;
-        const file = fileInput.files[0];
-        if (!file) return;
-
-        const slug = getStringHash(file.name);
-        const fileNamePrefix = `${Date.now()}_${slug}`;
-        const fileBase64 = await getBase64Async(file);
-        let base64Data = fileBase64.split(',')[1];
-
-        // If file is image
-        if (file.type.startsWith('image/')) {
-            const extension = file.type.split('/')[1];
-            const imageUrl = await saveBase64AsFile(base64Data, name2, fileNamePrefix, extension);
-            message.extra.image = imageUrl;
-            message.extra.inline_image = true;
-        }
-        // If file is video
-        else if (file.type.startsWith('video/')) {
-            const extension = file.type.split('/')[1];
-            const videoUrl = await saveBase64AsFile(base64Data, name2, fileNamePrefix, extension);
-            message.extra.video = videoUrl;
-        } else {
-            const uniqueFileName = `${fileNamePrefix}.txt`;
-
-            if (isConvertible(file.type)) {
-                try {
-                    const converter = getConverter(file.type);
-                    const fileText = await converter(file);
-                    base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
-                } catch (error) {
-                    toastr.error(String(error), t`Could not convert file`);
-                    console.error('Could not convert file', error);
-                }
-            }
-
-            const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data);
-
-            if (!fileUrl) {
-                return;
-            }
-
-            message.extra.file = {
-                url: fileUrl,
-                size: file.size,
-                name: file.name,
-                created: Date.now(),
-            };
-        }
-
-    } catch (error) {
-        console.error('Could not upload file', error);
-    } finally {
-        $('#file_form').trigger('reset');
-    }
-}
-
-/**
- * Uploads file to the server.
- * @param {string} fileName
- * @param {string} base64Data
- * @returns {Promise<string>} File URL
- */
-export async function uploadFileAttachment(fileName, base64Data) {
-    try {
-        const result = await fetch('/api/files/upload', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                name: fileName,
-                data: base64Data,
-            }),
-        });
-
-        if (!result.ok) {
-            const error = await result.text();
-            throw new Error(error);
-        }
-
-        const responseData = await result.json();
-        return responseData.path;
-    } catch (error) {
-        toastr.error(String(error), t`Could not upload file`);
-        console.error('Could not upload file', error);
-    }
-}
-
-/**
- * Downloads file from the server.
- * @param {string} url File URL
- * @returns {Promise<string>} File text
- */
-export async function getFileAttachment(url) {
-    try {
-        const result = await fetch(url, {
-            method: 'GET',
-            cache: 'force-cache',
-            headers: getRequestHeaders(),
-        });
-
-        if (!result.ok) {
-            const error = await result.text();
-            throw new Error(error);
-        }
-
-        const text = await result.text();
-        return text;
-    } catch (error) {
-        toastr.error(error, t`Could not download file`);
-        console.error('Could not download file', error);
-    }
-}
-
-/**
- * Validates file to make sure it is not binary or not image.
- * @param {File} file File object
- * @returns {Promise<boolean>} True if file is valid, false otherwise.
- */
-async function validateFile(file) {
-    const fileText = await file.text();
-    const isImage = file.type.startsWith('image/');
-    const isBinary = /^[\x00-\x08\x0E-\x1F\x7F-\xFF]*$/.test(fileText);
-
-    if (!isImage && file.size > fileSizeLimit) {
-        toastr.error(t`File is too big. Maximum size is ${humanFileSize(fileSizeLimit)}.`);
-        return false;
-    }
-
-    // If file is binary
-    if (isBinary && !isImage && !isConvertible(file.type)) {
-        toastr.error(t`Binary files are not supported. Select a text file or image.`);
-        return false;
-    }
-
-    return true;
-}
-
-export function hasPendingFileAttachment() {
-    const fileInput = document.getElementById('file_form_input');
-    if (!(fileInput instanceof HTMLInputElement)) return false;
-    const file = fileInput.files[0];
-    return !!file;
-}
-
-/**
- * Displays file information in the message sending form.
- * @param {File} file File object
- * @returns {Promise<void>}
- */
-async function onFileAttach(file) {
-    if (!file) return;
-
-    const isValid = await validateFile(file);
-
-    // If file is binary
-    if (!isValid) {
-        $('#file_form').trigger('reset');
-        return;
-    }
-
-    $('#file_form .file_name').text(file.name);
-    $('#file_form .file_size').text(humanFileSize(file.size));
-    $('#file_form').removeClass('displayNone');
-
-    // Reset form on chat change (if not on a welcome screen)
-    const currentChatId = getCurrentChatId();
-    if (currentChatId) {
-        eventSource.once(event_types.CHAT_CHANGED, () => {
-            $('#file_form').trigger('reset');
-        });
-    }
-}
-
-/**
- * Deletes file from message.
- * @param {number} messageId Message ID
- */
-async function deleteMessageFile(messageId) {
-    const confirm = await callGenericPopup('Are you sure you want to delete this file?', POPUP_TYPE.CONFIRM);
-
-    if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
-        console.debug('Delete file cancelled');
-        return;
-    }
-
-    const message = chat[messageId];
-
-    if (!message?.extra?.file) {
-        console.debug('Message has no file');
-        return;
-    }
-
-    const url = message.extra.file.url;
-
-    delete message.extra.file;
-    $(`.mes[mesid="${messageId}"] .mes_file_container`).remove();
-    await saveChatConditional();
-    await deleteFileFromServer(url);
-}
-
-
-/**
- * Opens file from message in a modal.
- * @param {number} messageId Message ID
- */
-async function viewMessageFile(messageId) {
-    const messageFile = chat[messageId]?.extra?.file;
-
-    if (!messageFile) {
-        console.debug('Message has no file or it is empty');
-        return;
-    }
-
-    await openFilePopup(messageFile);
-}
-
-/**
- * Inserts a file embed into the message.
- * @param {number} messageId
- * @param {JQuery<HTMLElement>} messageBlock
- * @returns {Promise<void>}
- */
-function embedMessageFile(messageId, messageBlock) {
-    const message = chat[messageId];
-
-    if (!message) {
-        console.warn('Failed to find message with id', messageId);
-        return;
-    }
-
-    $('#embed_file_input')
-        .off('change')
-        .on('change', parseAndUploadEmbed)
-        .trigger('click');
-
-    async function parseAndUploadEmbed(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const isValid = await validateFile(file);
-
-        if (!isValid) {
-            $('#file_form').trigger('reset');
+        if (!isBackupEnabled) {
             return;
         }
 
-        await populateFileAttachment(message, 'embed_file_input');
-        await eventSource.emit(event_types.MESSAGE_FILE_EMBEDDED, messageId);
-        appendMediaToMessage(message, messageBlock);
-        await saveChatConditional();
+        // replace non-alphanumeric characters with underscores
+        name = sanitize(name).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+        const backupFile = path.join(directory, `${CHAT_BACKUPS_PREFIX}${name}_${generateTimestamp()}.jsonl`);
+        writeFileAtomicSync(backupFile, chat, 'utf-8');
+
+        removeOldBackups(directory, `${CHAT_BACKUPS_PREFIX}${name}_`);
+
+        if (isNaN(maxTotalChatBackups) || maxTotalChatBackups < 0) {
+            return;
+        }
+
+        removeOldBackups(directory, CHAT_BACKUPS_PREFIX, maxTotalChatBackups);
+    } catch (err) {
+        console.error(`Could not backup chat for ${name}`, err);
     }
 }
 
 /**
- * Appends file content to the message text.
- * @param {object} message Message object
- * @param {string} messageText Message text
- * @returns {Promise<string>} Message text with file content appended.
+ * @type {Map<string, import('lodash').DebouncedFunc<function(string, string, string): void>>}
  */
-export async function appendFileContent(message, messageText) {
-    if (message.extra?.file) {
-        const fileText = message.extra.file.text || (await getFileAttachment(message.extra.file.url));
+const backupFunctions = new Map();
 
-        if (fileText) {
-            const fileWrapped = `${fileText}\n\n`;
-            message.extra.fileLength = fileWrapped.length;
-            messageText = fileWrapped + messageText;
-        }
+/**
+ * Gets a backup function for a user.
+ * @param {string} handle User handle
+ * @returns {function(string, string, string): void} Backup function
+ */
+function getBackupFunction(handle) {
+    if (!backupFunctions.has(handle)) {
+        backupFunctions.set(handle, _.throttle(backupChat, throttleInterval, { leading: true, trailing: true }));
     }
-    return messageText;
+    return backupFunctions.get(handle) || (() => { });
 }
 
 /**
- * Replaces style tags in the message text with custom tags with encoded content.
- * @param {string} text
- * @returns {string} Encoded message text
- * @copyright https://github.com/kwaroran/risuAI
+ * Gets a preview message from an array of chat messages
+ * @param {Array<Object>} messages - Array of chat messages, each with a 'mes' property
+ * @returns {string} A truncated preview of the last message or empty string if no messages
  */
-export function encodeStyleTags(text) {
-    const styleRegex = /<style>(.+?)<\/style>/gims;
-    return text.replaceAll(styleRegex, (_, match) => {
-        return `<custom-style>${escape(match)}</custom-style>`;
-    });
-}
+function getPreviewMessage(messages) {
+    const strlen = 400;
+    const lastMessage = messages[messages.length - 1]?.mes;
 
-/**
- * Sanitizes custom style tags in the message text to prevent DOM pollution.
- * @param {string} text Message text
- * @param {object} options Options object
- * @param {string} options.prefix Prefix the selectors with this value
- * @returns {string} Sanitized message text
- * @copyright https://github.com/kwaroran/risuAI
- */
-export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
-    const styleDecodeRegex = /<custom-style>(.+?)<\/custom-style>/gms;
-    const mediaAllowed = isExternalMediaAllowed();
-
-    function sanitizeRule(rule) {
-        if (Array.isArray(rule.selectors)) {
-            for (let i = 0; i < rule.selectors.length; i++) {
-                const selector = rule.selectors[i];
-                if (selector) {
-                    const selectors = (selector.split(' ') ?? []).map((v) => {
-                        if (v.startsWith('.')) {
-                            return '.custom-' + v.substring(1);
-                        }
-                        return v;
-                    }).join(' ');
-
-                    rule.selectors[i] = prefix + selectors;
-                }
-            }
-        }
-        if (!mediaAllowed && Array.isArray(rule.declarations) && rule.declarations.length > 0) {
-            rule.declarations = rule.declarations.filter(declaration => !declaration.value.includes('://'));
-        }
-    }
-
-    function sanitizeRuleSet(ruleSet) {
-        if (Array.isArray(ruleSet.selectors) || Array.isArray(ruleSet.declarations)) {
-            sanitizeRule(ruleSet);
-        }
-
-        if (Array.isArray(ruleSet.rules)) {
-            ruleSet.rules = ruleSet.rules.filter(rule => rule.type !== 'import');
-
-            for (const mediaRule of ruleSet.rules) {
-                sanitizeRuleSet(mediaRule);
-            }
-        }
-    }
-
-    return text.replaceAll(styleDecodeRegex, (_, style) => {
-        try {
-            let styleCleaned = unescape(style).replaceAll(/<br\/>/g, '');
-            const ast = css.parse(styleCleaned);
-            const sheet = ast?.stylesheet;
-            if (sheet) {
-                sanitizeRuleSet(ast.stylesheet);
-            }
-            return `<style>${css.stringify(ast)}</style>`;
-        } catch (error) {
-            return `CSS ERROR: ${error}`;
-        }
-    });
-}
-
-/**
- * Class to manage style preferences for characters.
- */
-class StylesPreference {
-    /**
-     * Creates a new StylesPreference instance.
-     * @param {string|null} avatarId - The avatar ID of the character
-     */
-    constructor(avatarId) {
-        this.avatarId = avatarId;
-    }
-
-    /**
-     * Gets the account storage key for the style preference.
-     */
-    get key() {
-        return `AllowGlobalStyles-${this.avatarId}`;
-    }
-
-    /**
-     * Checks if a preference exists for this character.
-     * @returns {boolean} True if preference exists, false otherwise
-     */
-    exists() {
-        return this.avatarId
-            ? accountStorage.getItem(this.key) !== null
-            : true; // No character == assume preference is set
-    }
-
-    /**
-     * Gets the current style preference.
-     * @returns {boolean} True if global styles are allowed, false otherwise
-     */
-    get() {
-        return this.avatarId
-            ? accountStorage.getItem(this.key) === 'true'
-            : false; // Always disabled when creating a new character
-    }
-
-    /**
-     * Sets the global styles preference.
-     * @param {boolean} allowed - Whether global styles are allowed
-     */
-    set(allowed) {
-        if (this.avatarId) {
-            accountStorage.setItem(this.key, String(allowed));
-        }
-    }
-}
-
-/**
- * Formats creator notes in the message text.
- * @param {string} text Raw Markdown text
- * @param {string} avatarId Avatar ID
- * @returns {string} Formatted HTML text
- */
-export function formatCreatorNotes(text, avatarId) {
-    const preference = new StylesPreference(avatarId);
-    const sanitizeStyles = !preference.get();
-    const decodeStyleParam = { prefix: sanitizeStyles ? '#creator_notes_spoiler ' : '' };
-    /** @type {import('dompurify').Config & { MESSAGE_SANITIZE: boolean }} */
-    const config = {
-        RETURN_DOM: false,
-        RETURN_DOM_FRAGMENT: false,
-        RETURN_TRUSTED_TYPE: false,
-        MESSAGE_SANITIZE: true,
-        ADD_TAGS: ['custom-style'],
-    };
-
-    let html = converter.makeHtml(substituteParams(text));
-    html = encodeStyleTags(html);
-    html = DOMPurify.sanitize(html, config);
-    html = decodeStyleTags(html, decodeStyleParam);
-
-    return html;
-}
-
-async function openGlobalStylesPreferenceDialog() {
-    if (selected_group) {
-        toastr.info(t`To change the global styles preference, please select a character individually.`);
-        return;
-    }
-
-    const entityId = getCurrentEntityId();
-    const preference = new StylesPreference(entityId);
-    const currentValue = preference.get();
-
-    const template = $(await renderTemplateAsync('globalStylesPreference'));
-
-    const allowedRadio = template.find('#global_styles_allowed');
-    const forbiddenRadio = template.find('#global_styles_forbidden');
-
-    allowedRadio.on('change', () => {
-        preference.set(true);
-        allowedRadio.prop('checked', true);
-        forbiddenRadio.prop('checked', false);
-    });
-
-    forbiddenRadio.on('change', () => {
-        preference.set(false);
-        allowedRadio.prop('checked', false);
-        forbiddenRadio.prop('checked', true);
-    });
-
-    const currentPreferenceRadio = currentValue ? allowedRadio : forbiddenRadio;
-    template.find(currentPreferenceRadio).prop('checked', true);
-
-    await callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: false, large: false });
-
-    // Re-render the notes if the preference changed
-    const newValue = preference.get();
-    if (newValue !== currentValue) {
-        $('#rm_button_selected_ch').trigger('click');
-        setGlobalStylesButtonClass(newValue);
-    }
-}
-
-async function checkForCreatorNotesStyles() {
-    // Don't do anything if in group chat or not in a chat
-    if (selected_group || this_chid === undefined) {
-        return;
-    }
-
-    const notes = characters[this_chid].data?.creator_notes || characters[this_chid].creatorcomment;
-    const avatarId = characters[this_chid].avatar;
-    const styleContents = getStyleContentsFromMarkdown(notes);
-
-    if (!styleContents) {
-        setGlobalStylesButtonClass(null);
-        return;
-    }
-
-    const preference = new StylesPreference(avatarId);
-    const hasPreference = preference.exists();
-    if (!hasPreference) {
-        const template = $(await renderTemplateAsync('globalStylesPopup'));
-        template.find('textarea').val(styleContents);
-        const confirmResult = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', {
-            wide: false,
-            large: false,
-            okButton: t`Just to Creator's Notes`,
-            cancelButton: t`Apply to the entire app`,
-        });
-
-        switch (confirmResult) {
-            case POPUP_RESULT.AFFIRMATIVE:
-                preference.set(false);
-                break;
-            case POPUP_RESULT.NEGATIVE:
-                preference.set(true);
-                break;
-            case POPUP_RESULT.CANCELLED:
-                preference.set(false);
-                break;
-        }
-
-        $('#rm_button_selected_ch').trigger('click');
-    }
-
-    const currentPreference = preference.get();
-    setGlobalStylesButtonClass(currentPreference);
-}
-
-/**
- * Sets the class of the global styles button based on the state.
- * @param {boolean|null} state State of the button
- */
-function setGlobalStylesButtonClass(state) {
-    const button = $('#creators_note_styles_button');
-    button.toggleClass('empty', state === null);
-    button.toggleClass('allowed', state === true);
-    button.toggleClass('forbidden', state === false);
-}
-
-/**
- * Extracts the contents of all style elements from the Markdown text.
- * @param {string} text Markdown text
- * @returns {string} The joined contents of all style elements
- */
-function getStyleContentsFromMarkdown(text) {
-    if (!text) {
+    if (!lastMessage) {
         return '';
     }
 
-    const div = document.createElement('div');
-    const html = converter.makeHtml(substituteParams(text));
-    div.innerHTML = html;
-    const styleElements = Array.from(div.querySelectorAll('style'));
-    return styleElements
-        .filter(s => s.textContent.trim().length > 0)
-        .map(s => s.textContent.trim())
-        .join('\n\n');
+    return lastMessage.length > strlen
+        ? '...' + lastMessage.substring(lastMessage.length - strlen)
+        : lastMessage;
 }
 
-async function openExternalMediaOverridesDialog() {
-    const entityId = getCurrentEntityId();
-
-    if (!entityId) {
-        toastr.info(t`No character or group selected`);
-        return;
+process.on('exit', () => {
+    for (const func of backupFunctions.values()) {
+        func.flush();
     }
+});
 
-    const template = $(await renderTemplateAsync('forbidMedia'));
-    template.find('.forbid_media_global_state_forbidden').toggle(power_user.forbid_external_media);
-    template.find('.forbid_media_global_state_allowed').toggle(!power_user.forbid_external_media);
+/**
+ * Imports a chat from Ooba's format.
+ * @param {string} userName User name
+ * @param {string} characterName Character name
+ * @param {object} jsonData JSON data
+ * @returns {string} Chat data
+ */
+function importOobaChat(userName, characterName, jsonData) {
+    /** @type {object[]} */
+    const chat = [{
+        user_name: userName,
+        character_name: characterName,
+        create_date: humanizedISO8601DateTime(),
+    }];
 
-    if (power_user.external_media_allowed_overrides.includes(entityId)) {
-        template.find('#forbid_media_override_allowed').prop('checked', true);
-    }
-    else if (power_user.external_media_forbidden_overrides.includes(entityId)) {
-        template.find('#forbid_media_override_forbidden').prop('checked', true);
-    }
-    else {
-        template.find('#forbid_media_override_global').prop('checked', true);
-    }
-
-    callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: false, large: false });
-}
-
-export function getCurrentEntityId() {
-    if (selected_group) {
-        return String(selected_group);
-    }
-
-    return characters[this_chid]?.avatar ?? null;
-}
-
-export function isExternalMediaAllowed() {
-    const entityId = getCurrentEntityId();
-    if (!entityId) {
-        return !power_user.forbid_external_media;
-    }
-
-    if (power_user.external_media_allowed_overrides.includes(entityId)) {
-        return true;
-    }
-
-    if (power_user.external_media_forbidden_overrides.includes(entityId)) {
-        return false;
-    }
-
-    return !power_user.forbid_external_media;
-}
-
-function expandMessageImage(event) {
-    const mesBlock = $(event.currentTarget).closest('.mes');
-    const mesId = mesBlock.attr('mesid');
-    const message = chat[mesId];
-    const imgSrc = message?.extra?.image;
-    const title = message?.extra?.title;
-
-    if (!imgSrc) {
-        return;
-    }
-
-    const img = document.createElement('img');
-    img.classList.add('img_enlarged');
-    img.src = imgSrc;
-    const imgHolder = document.createElement('div');
-    imgHolder.classList.add('img_enlarged_holder');
-    imgHolder.append(img);
-    const imgContainer = $('<div><pre><code class="img_enlarged_title"></code></pre></div>');
-    imgContainer.prepend(imgHolder);
-    imgContainer.addClass('img_enlarged_container');
-
-    const codeTitle = imgContainer.find('.img_enlarged_title');
-    codeTitle.addClass('txt').text(title);
-    const titleEmpty = !title || title.trim().length === 0;
-    imgContainer.find('pre').toggle(!titleEmpty);
-    addCopyToCodeBlocks(imgContainer);
-
-    const popup = new Popup(imgContainer, POPUP_TYPE.DISPLAY, '', { large: true, transparent: true });
-
-    popup.dlg.style.width = 'unset';
-    popup.dlg.style.height = 'unset';
-
-    img.addEventListener('click', event => {
-        const shouldZoom = !img.classList.contains('zoomed');
-        img.classList.toggle('zoomed', shouldZoom);
-        event.stopPropagation();
-    });
-    codeTitle[0]?.addEventListener('click', event => {
-        event.stopPropagation();
-    });
-
-    popup.dlg.addEventListener('click', event => {
-        popup.completeCancelled();
-    });
-
-    popup.show();
-    return img;
-}
-
-function expandAndZoomMessageImage(event) {
-    expandMessageImage(event).click();
-}
-
-async function deleteMessageImage() {
-    const value = await callGenericPopup('<h3>Delete image from message?<br>This action can\'t be undone.</h3>', POPUP_TYPE.TEXT, '', {
-        okButton: t`Delete one`,
-        customButtons: [
-            {
-                text: t`Delete all`,
-                appendAtEnd: true,
-                result: POPUP_RESULT.CUSTOM1,
-            },
-            {
-                text: t`Cancel`,
-                appendAtEnd: true,
-                result: POPUP_RESULT.CANCELLED,
-            },
-        ],
-    });
-
-    if (!value) {
-        return;
-    }
-
-    const mesBlock = $(this).closest('.mes');
-    const mesId = mesBlock.attr('mesid');
-    const message = chat[mesId];
-
-    let isLastImage = true;
-
-    if (Array.isArray(message.extra.image_swipes)) {
-        const indexOf = message.extra.image_swipes.indexOf(message.extra.image);
-        if (indexOf > -1) {
-            message.extra.image_swipes.splice(indexOf, 1);
-            isLastImage = message.extra.image_swipes.length === 0;
-            if (!isLastImage) {
-                const newIndex = Math.min(indexOf, message.extra.image_swipes.length - 1);
-                message.extra.image = message.extra.image_swipes[newIndex];
-            }
+    for (const arr of jsonData.data_visible) {
+        if (arr[0]) {
+            const userMessage = {
+                name: userName,
+                is_user: true,
+                send_date: humanizedISO8601DateTime(),
+                mes: arr[0],
+            };
+            chat.push(userMessage);
+        }
+        if (arr[1]) {
+            const charMessage = {
+                name: characterName,
+                is_user: false,
+                send_date: humanizedISO8601DateTime(),
+                mes: arr[1],
+            };
+            chat.push(charMessage);
         }
     }
 
-    if (isLastImage || value === POPUP_RESULT.CUSTOM1) {
-        delete message.extra.image;
-        delete message.extra.inline_image;
-        delete message.extra.title;
-        delete message.extra.append_title;
-        delete message.extra.image_swipes;
-        mesBlock.find('.mes_img_container').removeClass('img_extra');
-        mesBlock.find('.mes_img').attr('src', '');
-    } else {
-        appendMediaToMessage(message, mesBlock);
-    }
-
-    await saveChatConditional();
+    return chat.map(obj => JSON.stringify(obj)).join('\n');
 }
 
 /**
- * Deletes file from the server.
- * @param {string} url Path to the file on the server
- * @param {boolean} [silent=false] If true, do not show error messages
- * @returns {Promise<boolean>} True if file was deleted, false otherwise.
+ * Imports a chat from Agnai's format.
+ * @param {string} userName User name
+ * @param {string} characterName Character name
+ * @param {object} jsonData Chat data
+ * @returns {string} Chat data
  */
-async function deleteFileFromServer(url, silent = false) {
-    try {
-        const result = await fetch('/api/files/delete', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ path: url }),
+function importAgnaiChat(userName, characterName, jsonData) {
+    /** @type {object[]} */
+    const chat = [{
+        user_name: userName,
+        character_name: characterName,
+        create_date: humanizedISO8601DateTime(),
+    }];
+
+    for (const message of jsonData.messages) {
+        const isUser = !!message.userId;
+        chat.push({
+            name: isUser ? userName : characterName,
+            is_user: isUser,
+            send_date: humanizedISO8601DateTime(),
+            mes: message.msg,
+        });
+    }
+
+    return chat.map(obj => JSON.stringify(obj)).join('\n');
+}
+
+/**
+ * Imports a chat from CAI Tools format.
+ * @param {string} userName User name
+ * @param {string} characterName Character name
+ * @param {object} jsonData JSON data
+ * @returns {string[]} Converted data
+ */
+function importCAIChat(userName, characterName, jsonData) {
+    /**
+     * Converts the chat data to suitable format.
+     * @param {object} history Imported chat data
+     * @returns {object[]} Converted chat data
+     */
+    function convert(history) {
+        const starter = {
+            user_name: userName,
+            character_name: characterName,
+            create_date: humanizedISO8601DateTime(),
+        };
+
+        const historyData = history.msgs.map((msg) => ({
+            name: msg.src.is_human ? userName : characterName,
+            is_user: msg.src.is_human,
+            send_date: humanizedISO8601DateTime(),
+            mes: msg.text,
+        }));
+
+        return [starter, ...historyData];
+    }
+
+    const newChats = (jsonData.histories.histories ?? []).map(history => newChats.push(convert(history).map(obj => JSON.stringify(obj)).join('\n')));
+    return newChats;
+}
+
+/**
+ * Imports a chat from Kobold Lite format.
+ * @param {string} _userName User name
+ * @param {string} _characterName Character name
+ * @param {object} data JSON data
+ * @returns {string} Chat data
+ */
+function importKoboldLiteChat(_userName, _characterName, data) {
+    const inputToken = '{{[INPUT]}}';
+    const outputToken = '{{[OUTPUT]}}';
+
+    /** @type {function(string): object} */
+    function processKoboldMessage(msg) {
+        const isUser = msg.includes(inputToken);
+        return {
+            name: isUser ? header.user_name : header.character_name,
+            is_user: isUser,
+            mes: msg.replaceAll(inputToken, '').replaceAll(outputToken, '').trim(),
+            send_date: Date.now(),
+        };
+    }
+
+    // Create the header
+    const header = {
+        user_name: String(data.savedsettings.chatname),
+        character_name: String(data.savedsettings.chatopponent).split('||$||')[0],
+    };
+    // Format messages
+    const formattedMessages = data.actions.map(processKoboldMessage);
+    // Add prompt if available
+    if (data.prompt) {
+        formattedMessages.unshift(processKoboldMessage(data.prompt));
+    }
+    // Combine header and messages
+    const chatData = [header, ...formattedMessages];
+    return chatData.map(obj => JSON.stringify(obj)).join('\n');
+}
+
+/**
+ * Flattens `msg` and `swipes` data from Chub Chat format.
+ * Only changes enough to make it compatible with the standard chat serialization format.
+ * @param {string} userName User name
+ * @param {string} characterName Character name
+ * @param {string[]} lines serialised JSONL data
+ * @returns {string} Converted data
+ */
+function flattenChubChat(userName, characterName, lines) {
+    function flattenSwipe(swipe) {
+        return swipe.message ? swipe.message : swipe;
+    }
+
+    function convert(line) {
+        const lineData = tryParse(line);
+        if (!lineData) return line;
+
+        if (lineData.mes && lineData.mes.message) {
+            lineData.mes = lineData?.mes.message;
+        }
+
+        if (lineData?.swipes && Array.isArray(lineData.swipes)) {
+            lineData.swipes = lineData.swipes.map(swipe => flattenSwipe(swipe));
+        }
+
+        return JSON.stringify(lineData);
+    }
+
+    return (lines ?? []).map(convert).join('\n');
+}
+
+/**
+ * Imports a chat from RisuAI format.
+ * @param {string} userName User name
+ * @param {string} characterName Character name
+ * @param {object} jsonData Imported chat data
+ * @returns {string} Chat data
+ */
+function importRisuChat(userName, characterName, jsonData) {
+    /** @type {object[]} */
+    const chat = [{
+        user_name: userName,
+        character_name: characterName,
+        create_date: humanizedISO8601DateTime(),
+    }];
+
+    for (const message of jsonData.data.message) {
+        const isUser = message.role === 'user';
+        chat.push({
+            name: message.name ?? (isUser ? userName : characterName),
+            is_user: isUser,
+            send_date: Number(message.time ?? Date.now()),
+            mes: message.data ?? '',
+        });
+    }
+
+    return chat.map(obj => JSON.stringify(obj)).join('\n');
+}
+
+/**
+ * Reads the first line of a file asynchronously.
+ * @param {string} filePath Path to the file
+ * @returns {Promise<string>} The first line of the file
+ */
+function readFirstLine(filePath) {
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+    const rl = readline.createInterface({ input: stream });
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        rl.on('line', line => {
+            resolved = true;
+            rl.close();
+            stream.close();
+            resolve(line);
         });
 
-        if (!result.ok && !silent) {
-            const error = await result.text();
-            throw new Error(error);
-        }
+        rl.on('error', error => {
+            resolved = true;
+            reject(error);
+        });
 
-        await eventSource.emit(event_types.FILE_ATTACHMENT_DELETED, url);
+        // Handle empty files
+        stream.on('end', () => {
+            if (!resolved) {
+                resolved = true;
+                resolve('');
+            }
+        });
+    });
+}
+
+/**
+ * Checks if the chat being saved has the same integrity as the one being loaded.
+ * @param {string} filePath Path to the chat file
+ * @param {string} integritySlug Integrity slug
+ * @returns {Promise<boolean>} Whether the chat is intact
+ */
+async function checkChatIntegrity(filePath, integritySlug) {
+    // If the chat file doesn't exist, assume it's intact
+    if (!fs.existsSync(filePath)) {
         return true;
-    } catch (error) {
-        toastr.error(String(error), t`Could not delete file`);
-        console.error('Could not delete file', error);
-        return false;
-    }
-}
-
-/**
- * Opens file attachment in a modal.
- * @param {FileAttachment} attachment File attachment
- */
-async function openFilePopup(attachment) {
-    const fileText = attachment.text || (await getFileAttachment(attachment.url));
-
-    const modalTemplate = $('<div><pre><code></code></pre></div>');
-    modalTemplate.find('code').addClass('txt').text(fileText);
-    modalTemplate.addClass('file_modal').addClass('textarea_compact').addClass('fontsize90p');
-    addCopyToCodeBlocks(modalTemplate);
-
-    callGenericPopup(modalTemplate, POPUP_TYPE.TEXT, '', { wide: true, large: true });
-}
-
-/**
- * Edit a file attachment in a notepad-like modal.
- * @param {FileAttachment} attachment Attachment to edit
- * @param {string} source Attachment source
- * @param {function} callback Callback function
- */
-async function editAttachment(attachment, source, callback) {
-    const originalFileText = attachment.text || (await getFileAttachment(attachment.url));
-    const template = $(await renderExtensionTemplateAsync('attachments', 'notepad'));
-
-    let editedFileText = originalFileText;
-    template.find('[name="notepadFileContent"]').val(editedFileText).on('input', function () {
-        editedFileText = String($(this).val());
-    });
-
-    let editedFileName = attachment.name;
-    template.find('[name="notepadFileName"]').val(editedFileName).on('input', function () {
-        editedFileName = String($(this).val());
-    });
-
-    const result = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: 'Save', cancelButton: 'Cancel' });
-
-    if (result !== POPUP_RESULT.AFFIRMATIVE) {
-        return;
     }
 
-    if (editedFileText === originalFileText && editedFileName === attachment.name) {
-        return;
+    // Parse the first line of the chat file as JSON
+    const firstLine = await readFirstLine(filePath);
+    const jsonData = tryParse(firstLine);
+    const chatIntegrity = jsonData?.chat_metadata?.integrity;
+
+    // If the chat has no integrity metadata, assume it's intact
+    if (!chatIntegrity) {
+        return true;
     }
 
-    const nullCallback = () => { };
-    await deleteAttachment(attachment, source, nullCallback, false);
-    const file = new File([editedFileText], editedFileName, { type: 'text/plain' });
-    await uploadFileAttachmentToServer(file, source);
-
-    callback();
+    // Check if the integrity matches
+    return chatIntegrity === integritySlug;
 }
 
 /**
- * Downloads an attachment to the user's device.
- * @param {FileAttachment} attachment Attachment to download
+ * @typedef {Object} ChatInfo
+ * @property {string} [file_name] - The name of the chat file
+ * @property {string} [file_size] - The size of the chat file
+ * @property {number} [chat_items] - The number of chat items in the file
+ * @property {string} [mes] - The last message in the chat
+ * @property {number} [last_mes] - The timestamp of the last message
  */
-async function downloadAttachment(attachment) {
-    const fileText = attachment.text || (await getFileAttachment(attachment.url));
-    const blob = new Blob([fileText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.name;
-    a.click();
-    URL.revokeObjectURL(url);
-}
 
 /**
- * Removes an attachment from the disabled list.
- * @param {FileAttachment} attachment Attachment to enable
- * @param {function} callback Success callback
+ * Reads the information from a chat file.
+ * @param {string} pathToFile
+ * @param {object} additionalData
+ * @returns {Promise<ChatInfo>}
  */
-function enableAttachment(attachment, callback) {
-    ensureAttachmentsExist();
-    extension_settings.disabled_attachments = extension_settings.disabled_attachments.filter(url => url !== attachment.url);
-    saveSettingsDebounced();
-    callback();
-}
+export async function getChatInfo(pathToFile, additionalData = {}, isGroup = false) {
+    return new Promise(async (res) => {
+        const stats = await fs.promises.stat(pathToFile);
+        const fileSizeInKB = `${(stats.size / 1024).toFixed(2)}kb`;
 
-/**
- * Adds an attachment to the disabled list.
- * @param {FileAttachment} attachment Attachment to disable
- * @param {function} callback Success callback
- */
-function disableAttachment(attachment, callback) {
-    ensureAttachmentsExist();
-    extension_settings.disabled_attachments.push(attachment.url);
-    saveSettingsDebounced();
-    callback();
-}
+        const chatData = {
+            file_name: path.parse(pathToFile).base,
+            file_size: fileSizeInKB,
+            chat_items: 0,
+            mes: '[The chat is empty]',
+            last_mes: stats.mtimeMs,
+            ...additionalData,
+        };
 
-/**
- * Moves a file attachment to a different source.
- * @param {FileAttachment} attachment Attachment to moves
- * @param {string} source Source of the attachment
- * @param {function} callback Success callback
- * @returns {Promise<void>} A promise that resolves when the attachment is moved.
- */
-async function moveAttachment(attachment, source, callback) {
-    let selectedTarget = source;
-    const targets = getAvailableTargets();
-    const template = $(await renderExtensionTemplateAsync('attachments', 'move-attachment', { name: attachment.name, targets }));
-    template.find('.moveAttachmentTarget').val(source).on('input', function () {
-        selectedTarget = String($(this).val());
-    });
-
-    const result = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', { wide: false, large: false, okButton: 'Move', cancelButton: 'Cancel' });
-
-    if (result !== POPUP_RESULT.AFFIRMATIVE) {
-        console.debug('Move attachment cancelled');
-        return;
-    }
-
-    if (selectedTarget === source) {
-        console.debug('Move attachment cancelled: same source and target');
-        return;
-    }
-
-    const content = await getFileAttachment(attachment.url);
-    const file = new File([content], attachment.name, { type: 'text/plain' });
-    await deleteAttachment(attachment, source, () => { }, false);
-    await uploadFileAttachmentToServer(file, selectedTarget);
-    callback();
-}
-
-/**
- * Deletes an attachment from the server and the chat.
- * @param {FileAttachment} attachment Attachment to delete
- * @param {string} source Source of the attachment
- * @param {function} callback Callback function
- * @param {boolean} [confirm=true] If true, show a confirmation dialog
- * @returns {Promise<void>} A promise that resolves when the attachment is deleted.
- */
-export async function deleteAttachment(attachment, source, callback, confirm = true) {
-    if (confirm) {
-        const result = await callGenericPopup('Are you sure you want to delete this attachment?', POPUP_TYPE.CONFIRM);
-
-        if (result !== POPUP_RESULT.AFFIRMATIVE) {
+        if (stats.size === 0 && !isGroup) {
+            console.warn(`Found an empty chat file: ${pathToFile}`);
+            res({});
             return;
         }
-    }
 
-    ensureAttachmentsExist();
+        if (stats.size === 0 && isGroup) {
+            res(chatData);
+            return;
+        }
 
-    switch (source) {
-        case 'global':
-            extension_settings.attachments = extension_settings.attachments.filter((a) => a.url !== attachment.url);
-            saveSettingsDebounced();
-            break;
-        case 'chat':
-            chat_metadata.attachments = chat_metadata.attachments.filter((a) => a.url !== attachment.url);
-            saveMetadataDebounced();
-            break;
-        case 'character':
-            extension_settings.character_attachments[characters[this_chid]?.avatar] = extension_settings.character_attachments[characters[this_chid]?.avatar].filter((a) => a.url !== attachment.url);
-            break;
-    }
+        const fileStream = fs.createReadStream(pathToFile);
+        const rl = readline.createInterface({
+            input: fileStream,
+            crlfDelay: Infinity,
+        });
 
-    if (Array.isArray(extension_settings.disabled_attachments) && extension_settings.disabled_attachments.includes(attachment.url)) {
-        extension_settings.disabled_attachments = extension_settings.disabled_attachments.filter(url => url !== attachment.url);
-        saveSettingsDebounced();
-    }
+        let lastLine;
+        let itemCounter = 0;
+        rl.on('line', (line) => {
+            itemCounter++;
+            lastLine = line;
+        });
+        rl.on('close', () => {
+            rl.close();
 
-    const silent = confirm === false;
-    await deleteFileFromServer(attachment.url, silent);
-    callback();
+            if (lastLine) {
+                const jsonData = tryParse(lastLine);
+                if (jsonData && (jsonData.name || jsonData.character_name)) {
+                    chatData.chat_items = isGroup ? itemCounter : (itemCounter - 1);
+                    chatData.mes = jsonData['mes'] || '[The message is empty]';
+                    chatData.last_mes = jsonData['send_date'] || stats.mtimeMs;
+
+                    res(chatData);
+                } else {
+                    console.warn('Found an invalid or corrupted chat file:', pathToFile);
+                    res({});
+                }
+            }
+        });
+    });
 }
 
-/**
- * Determines if the attachment is disabled.
- * @param {FileAttachment} attachment Attachment to check
- * @returns {boolean} True if attachment is disabled, false otherwise.
- */
-function isAttachmentDisabled(attachment) {
-    return extension_settings.disabled_attachments.some(url => url === attachment?.url);
-}
+export const router = express.Router();
 
-/**
- * Opens the attachment manager.
- */
-async function openAttachmentManager() {
-    /**
-     * Renders a list of attachments.
-     * @param {FileAttachment[]} attachments List of attachments
-     * @param {string} source Source of the attachments
-     */
-    async function renderList(attachments, source) {
-        /**
-         * Sorts attachments by sortField and sortOrder.
-         * @param {FileAttachment} a First attachment
-         * @param {FileAttachment} b Second attachment
-         * @returns {number} Sort order
-         */
-        function sortFn(a, b) {
-            const sortValueA = a[sortField];
-            const sortValueB = b[sortField];
-            if (typeof sortValueA === 'string' && typeof sortValueB === 'string') {
-                return sortValueA.localeCompare(sortValueB) * (sortOrder === 'asc' ? 1 : -1);
+router.post('/save', validateAvatarUrlMiddleware, async function (request, response) {
+    try {
+        const directoryName = String(request.body.avatar_url).replace('.png', '');
+        const chatData = request.body.chat;
+        const jsonlData = chatData.map(JSON.stringify).join('\n');
+        const fileName = `${String(request.body.file_name)}.jsonl`;
+        const filePath = path.join(request.user.directories.chats, directoryName, sanitize(fileName));
+        if (checkIntegrity && !request.body.force) {
+            const integritySlug = chatData?.[0]?.chat_metadata?.integrity;
+            const isIntact = await checkChatIntegrity(filePath, integritySlug);
+            if (!isIntact) {
+                console.error(`Chat integrity check failed for ${filePath}`);
+                return response.status(400).send({ error: 'integrity' });
             }
-            return (sortValueA - sortValueB) * (sortOrder === 'asc' ? 1 : -1);
+        }
+        writeFileAtomicSync(filePath, jsonlData, 'utf8');
+        getBackupFunction(request.user.profile.handle)(request.user.directories.backups, directoryName, jsonlData);
+        return response.send({ result: 'ok' });
+    } catch (error) {
+        console.error(error);
+        return response.send(error);
+    }
+});
+
+router.post('/get', validateAvatarUrlMiddleware, function (request, response) {
+    try {
+        const dirName = String(request.body.avatar_url).replace('.png', '');
+        const directoryPath = path.join(request.user.directories.chats, dirName);
+        const chatDirExists = fs.existsSync(directoryPath);
+
+        //if no chat dir for the character is found, make one with the character name
+        if (!chatDirExists) {
+            fs.mkdirSync(directoryPath);
+            return response.send({});
         }
 
-        /**
-         * Filters attachments by name.
-         * @param {FileAttachment} a Attachment
-         * @returns {boolean} True if attachment matches the filter, false otherwise.
-         */
-        function filterFn(a) {
-            if (!filterString) {
-                return true;
-            }
-
-            return a.name.toLowerCase().includes(filterString.toLowerCase());
+        if (!request.body.file_name) {
+            return response.send({});
         }
-        const sources = {
-            [ATTACHMENT_SOURCE.GLOBAL]: '.globalAttachmentsList',
-            [ATTACHMENT_SOURCE.CHARACTER]: '.characterAttachmentsList',
-            [ATTACHMENT_SOURCE.CHAT]: '.chatAttachmentsList',
-        };
 
-        const selected = template
-            .find(sources[source])
-            .find('.attachmentListItemCheckbox:checked')
-            .map((_, el) => $(el).closest('.attachmentListItem').attr('data-attachment-url'))
-            .get();
+        const fileName = `${String(request.body.file_name)}.jsonl`;
+        const filePath = path.join(directoryPath, sanitize(fileName));
+        const chatFileExists = fs.existsSync(filePath);
 
-        template.find(sources[source]).empty();
+        if (!chatFileExists) {
+            return response.send({});
+        }
 
-        // Sort attachments by sortField and sortOrder, and apply filter
-        const sortedAttachmentList = attachments.slice().filter(filterFn).sort(sortFn);
+        const data = fs.readFileSync(filePath, 'utf8');
+        const lines = data.split('\n');
 
-        for (const attachment of sortedAttachmentList) {
-            const isDisabled = isAttachmentDisabled(attachment);
-            const attachmentTemplate = template.find('.attachmentListItemTemplate .attachmentListItem').clone();
-            attachmentTemplate.toggleClass('disabled', isDisabled);
-            attachmentTemplate.attr('data-attachment-url', attachment.url);
-            attachmentTemplate.attr('data-attachment-source', source);
-            attachmentTemplate.find('.attachmentFileIcon').attr('title', attachment.url);
-            attachmentTemplate.find('.attachmentListItemName').text(attachment.name);
-            attachmentTemplate.find('.attachmentListItemSize').text(humanFileSize(attachment.size));
-            attachmentTemplate.find('.attachmentListItemCreated').text(new Date(attachment.created).toLocaleString());
-            attachmentTemplate.find('.viewAttachmentButton').on('click', () => openFilePopup(attachment));
-            attachmentTemplate.find('.editAttachmentButton').on('click', () => editAttachment(attachment, source, renderAttachments));
-            attachmentTemplate.find('.deleteAttachmentButton').on('click', () => deleteAttachment(attachment, source, renderAttachments));
-            attachmentTemplate.find('.downloadAttachmentButton').on('click', () => downloadAttachment(attachment));
-            attachmentTemplate.find('.moveAttachmentButton').on('click', () => moveAttachment(attachment, source, renderAttachments));
-            attachmentTemplate.find('.enableAttachmentButton').toggle(isDisabled).on('click', () => enableAttachment(attachment, renderAttachments));
-            attachmentTemplate.find('.disableAttachmentButton').toggle(!isDisabled).on('click', () => disableAttachment(attachment, renderAttachments));
-            template.find(sources[source]).append(attachmentTemplate);
+        // Iterate through the array of strings and parse each line as JSON
+        const jsonData = lines.map((l) => { try { return JSON.parse(l); } catch (_) { return; } }).filter(x => x);
+        return response.send(jsonData);
+    } catch (error) {
+        console.error(error);
+        return response.send({});
+    }
+});
 
-            if (selected.includes(attachment.url)) {
-                attachmentTemplate.find('.attachmentListItemCheckbox').prop('checked', true);
-            }
+router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
+    try {
+        if (!request.body || !request.body.original_file || !request.body.renamed_file) {
+            return response.sendStatus(400);
+        }
+
+        const pathToFolder = request.body.is_group
+            ? request.user.directories.groupChats
+            : path.join(request.user.directories.chats, String(request.body.avatar_url).replace('.png', ''));
+        const pathToOriginalFile = path.join(pathToFolder, sanitize(request.body.original_file));
+        const pathToRenamedFile = path.join(pathToFolder, sanitize(request.body.renamed_file));
+        const sanitizedFileName = path.parse(pathToRenamedFile).name;
+        console.debug('Old chat name', pathToOriginalFile);
+        console.debug('New chat name', pathToRenamedFile);
+
+        if (!fs.existsSync(pathToOriginalFile) || fs.existsSync(pathToRenamedFile)) {
+            console.error('Either Source or Destination files are not available');
+            return response.status(400).send({ error: true });
+        }
+
+        fs.copyFileSync(pathToOriginalFile, pathToRenamedFile);
+        fs.unlinkSync(pathToOriginalFile);
+        console.info('Successfully renamed chat file.');
+        return response.send({ ok: true, sanitizedFileName });
+    } catch (error) {
+        console.error('Error renaming chat file:', error);
+        return response.status(500).send({ error: true });
+    }
+});
+
+router.post('/delete', validateAvatarUrlMiddleware, function (request, response) {
+    const dirName = String(request.body.avatar_url).replace('.png', '');
+    const fileName = String(request.body.chatfile);
+    const filePath = path.join(request.user.directories.chats, dirName, sanitize(fileName));
+    const chatFileExists = fs.existsSync(filePath);
+
+    if (!chatFileExists) {
+        console.error(`Chat file not found '${filePath}'`);
+        return response.sendStatus(400);
+    }
+
+    fs.unlinkSync(filePath);
+    console.info(`Deleted chat file: ${filePath}`);
+    return response.send('ok');
+});
+
+router.post('/delete/bulk', validateAvatarUrlMiddleware, function (request, response) {
+    const dirName = String(request.body.avatar_url).replace('.png', '');
+    const chatFiles = request.body.chatfiles;
+    
+    if (!Array.isArray(chatFiles) || chatFiles.length === 0) {
+        console.error('Invalid chatfiles array provided for bulk delete');
+        return response.sendStatus(400);
+    }
+
+    const results = {
+        success: [],
+        failed: []
+    };
+
+    for (const fileName of chatFiles) {
+        const filePath = path.join(request.user.directories.chats, dirName, sanitize(String(fileName)));
+        const chatFileExists = fs.existsSync(filePath);
+
+        if (!chatFileExists) {
+            console.error(`Chat file not found '${filePath}'`);
+            results.failed.push({
+                file: fileName,
+                error: 'File not found'
+            });
+            continue;
+        }
+
+        try {
+            fs.unlinkSync(filePath);
+            console.info(`Deleted chat file: ${filePath}`);
+            results.success.push(fileName);
+        } catch (error) {
+            console.error(`Failed to delete chat file '${filePath}':`, error);
+            results.failed.push({
+                file: fileName,
+                error: error.message
+            });
         }
     }
 
-    /**
-     * Renders buttons for the attachment manager.
-     */
-    async function renderButtons() {
-        const sources = {
-            [ATTACHMENT_SOURCE.GLOBAL]: '.globalAttachmentsTitle',
-            [ATTACHMENT_SOURCE.CHARACTER]: '.characterAttachmentsTitle',
-            [ATTACHMENT_SOURCE.CHAT]: '.chatAttachmentsTitle',
+    return response.send({
+        success: results.success,
+        failed: results.failed,
+        total: chatFiles.length
+    });
+});
+
+router.post('/export', validateAvatarUrlMiddleware, async function (request, response) {
+    if (!request.body.file || (!request.body.avatar_url && request.body.is_group === false)) {
+        return response.sendStatus(400);
+    }
+    const pathToFolder = request.body.is_group
+        ? request.user.directories.groupChats
+        : path.join(request.user.directories.chats, String(request.body.avatar_url).replace('.png', ''));
+    let filename = path.join(pathToFolder, request.body.file);
+    let exportfilename = request.body.exportfilename;
+    if (!fs.existsSync(filename)) {
+        const errorMessage = {
+            message: `Could not find JSONL file to export. Source chat file: ${filename}.`,
         };
+        console.error(errorMessage.message);
+        return response.status(404).json(errorMessage);
+    }
+    try {
+        // Short path for JSONL files
+        if (request.body.format === 'jsonl') {
+            try {
+                const rawFile = fs.readFileSync(filename, 'utf8');
+                const successMessage = {
+                    message: `Chat saved to ${exportfilename}`,
+                    result: rawFile,
+                };
 
-        const modal = template.find('.actionButtonsModal').hide();
-        const scrapers = ScraperManager.getDataBankScrapers();
+                console.info(`Chat exported as ${exportfilename}`);
+                return response.status(200).json(successMessage);
+            } catch (err) {
+                console.error(err);
+                const errorMessage = {
+                    message: `Could not read JSONL file to export. Source chat file: ${filename}.`,
+                };
+                console.error(errorMessage.message);
+                return response.status(500).json(errorMessage);
+            }
+        }
 
-        for (const scraper of scrapers) {
-            const isAvailable = await ScraperManager.isScraperAvailable(scraper.id);
-            if (!isAvailable) {
+        const readStream = fs.createReadStream(filename);
+        const rl = readline.createInterface({
+            input: readStream,
+        });
+        let buffer = '';
+        rl.on('line', (line) => {
+            const data = JSON.parse(line);
+            // Skip non-printable/prompt-hidden messages
+            if (data.is_system) {
+                return;
+            }
+            if (data.mes) {
+                const name = data.name;
+                const message = (data?.extra?.display_text || data?.mes || '').replace(/\r?\n/g, '\n');
+                buffer += (`${name}: ${message}\n\n`);
+            }
+        });
+        rl.on('close', () => {
+            const successMessage = {
+                message: `Chat saved to ${exportfilename}`,
+                result: buffer,
+            };
+            console.info(`Chat exported as ${exportfilename}`);
+            return response.status(200).json(successMessage);
+        });
+    } catch (err) {
+        console.error('chat export failed.', err);
+        return response.sendStatus(400);
+    }
+});
+
+router.post('/group/import', function (request, response) {
+    try {
+        const filedata = request.file;
+
+        if (!filedata) {
+            return response.sendStatus(400);
+        }
+
+        const chatname = humanizedISO8601DateTime();
+        const pathToUpload = path.join(filedata.destination, filedata.filename);
+        const pathToNewFile = path.join(request.user.directories.groupChats, `${chatname}.jsonl`);
+        fs.copyFileSync(pathToUpload, pathToNewFile);
+        fs.unlinkSync(pathToUpload);
+        return response.send({ res: chatname });
+    } catch (error) {
+        console.error(error);
+        return response.send({ error: true });
+    }
+});
+
+router.post('/import', validateAvatarUrlMiddleware, function (request, response) {
+    if (!request.body) return response.sendStatus(400);
+
+    const format = request.body.file_type;
+    const avatarUrl = (request.body.avatar_url).replace('.png', '');
+    const characterName = request.body.character_name;
+    const userName = request.body.user_name || 'User';
+
+    if (!request.file) {
+        return response.sendStatus(400);
+    }
+
+    try {
+        const pathToUpload = path.join(request.file.destination, request.file.filename);
+        const data = fs.readFileSync(pathToUpload, 'utf8');
+
+        if (format === 'json') {
+            fs.unlinkSync(pathToUpload);
+            const jsonData = JSON.parse(data);
+
+            /** @type {function(string, string, object): string|string[]} */
+            let importFunc;
+
+            if (jsonData.savedsettings !== undefined) { // Kobold Lite format
+                importFunc = importKoboldLiteChat;
+            } else if (jsonData.histories !== undefined) { // CAI Tools format
+                importFunc = importCAIChat;
+            } else if (Array.isArray(jsonData.data_visible)) { // oobabooga's format
+                importFunc = importOobaChat;
+            } else if (Array.isArray(jsonData.messages)) { // Agnai's format
+                importFunc = importAgnaiChat;
+            } else if (jsonData.type === 'risuChat') { // RisuAI format
+                importFunc = importRisuChat;
+            } else { // Unknown format
+                console.error('Incorrect chat format .json');
+                return response.send({ error: true });
+            }
+
+            const handleChat = (chat) => {
+                const fileName = `${characterName} - ${humanizedISO8601DateTime()} imported.jsonl`;
+                const filePath = path.join(request.user.directories.chats, avatarUrl, fileName);
+                writeFileAtomicSync(filePath, chat, 'utf8');
+            };
+
+            const chat = importFunc(userName, characterName, jsonData);
+
+            if (Array.isArray(chat)) {
+                chat.forEach(handleChat);
+            } else {
+                handleChat(chat);
+            }
+
+            return response.send({ res: true });
+        }
+
+        if (format === 'jsonl') {
+            let lines = data.split('\n');
+            const header = lines[0];
+
+            const jsonData = JSON.parse(header);
+
+            if (!(jsonData.user_name !== undefined || jsonData.name !== undefined)) {
+                console.error('Incorrect chat format .jsonl');
+                return response.send({ error: true });
+            }
+
+            // Do a tiny bit of work to import Chub Chat data
+            // Processing the entire file is so fast that it's not worth checking if it's a Chub chat first
+            let flattenedChat = data;
+            try {
+                // flattening is unlikely to break, but it's not worth failing to
+                // import normal chats in an attempt to import a Chub chat
+                flattenedChat = flattenChubChat(userName, characterName, lines);
+            } catch (error) {
+                console.warn('Failed to flatten Chub Chat data: ', error);
+            }
+
+            const fileName = `${characterName} - ${humanizedISO8601DateTime()} imported.jsonl`;
+            const filePath = path.join(request.user.directories.chats, avatarUrl, fileName);
+            if (flattenedChat !== data) {
+                writeFileAtomicSync(filePath, flattenedChat, 'utf8');
+            } else {
+                fs.copyFileSync(pathToUpload, filePath);
+            }
+            fs.unlinkSync(pathToUpload);
+            response.send({ res: true });
+        }
+    } catch (error) {
+        console.error(error);
+        return response.send({ error: true });
+    }
+});
+
+router.post('/group/get', (request, response) => {
+    if (!request.body || !request.body.id) {
+        return response.sendStatus(400);
+    }
+
+    const id = request.body.id;
+    const pathToFile = path.join(request.user.directories.groupChats, `${id}.jsonl`);
+
+    if (fs.existsSync(pathToFile)) {
+        const data = fs.readFileSync(pathToFile, 'utf8');
+        const lines = data.split('\n');
+
+        // Iterate through the array of strings and parse each line as JSON
+        const jsonData = lines.map(line => tryParse(line)).filter(x => x);
+        return response.send(jsonData);
+    } else {
+        return response.send([]);
+    }
+});
+
+router.post('/group/delete', (request, response) => {
+    if (!request.body || !request.body.id) {
+        return response.sendStatus(400);
+    }
+
+    const id = request.body.id;
+    const pathToFile = path.join(request.user.directories.groupChats, `${id}.jsonl`);
+
+    if (fs.existsSync(pathToFile)) {
+        fs.unlinkSync(pathToFile);
+        return response.send({ ok: true });
+    }
+
+    return response.send({ error: true });
+});
+
+router.post('/group/save', (request, response) => {
+    if (!request.body || !request.body.id) {
+        return response.sendStatus(400);
+    }
+
+    const id = request.body.id;
+    const pathToFile = path.join(request.user.directories.groupChats, `${id}.jsonl`);
+
+    if (!fs.existsSync(request.user.directories.groupChats)) {
+        fs.mkdirSync(request.user.directories.groupChats);
+    }
+
+    let chat_data = request.body.chat;
+    let jsonlData = chat_data.map(JSON.stringify).join('\n');
+    writeFileAtomicSync(pathToFile, jsonlData, 'utf8');
+    getBackupFunction(request.user.profile.handle)(request.user.directories.backups, String(id), jsonlData);
+    return response.send({ ok: true });
+});
+
+router.post('/search', validateAvatarUrlMiddleware, function (request, response) {
+    try {
+        const { query, avatar_url, group_id } = request.body;
+        let chatFiles = [];
+
+        if (group_id) {
+            // Find group's chat IDs first
+            const groupDir = path.join(request.user.directories.groups);
+            const groupFiles = fs.readdirSync(groupDir)
+                .filter(file => file.endsWith('.json'));
+
+            let targetGroup;
+            for (const groupFile of groupFiles) {
+                try {
+                    const groupData = JSON.parse(fs.readFileSync(path.join(groupDir, groupFile), 'utf8'));
+                    if (groupData.id === group_id) {
+                        targetGroup = groupData;
+                        break;
+                    }
+                } catch (error) {
+                    console.warn(groupFile, 'group file is corrupted:', error);
+                }
+            }
+
+            if (!targetGroup?.chats) {
+                return response.send([]);
+            }
+
+            // Find group chat files for given group ID
+            const groupChatsDir = path.join(request.user.directories.groupChats);
+            chatFiles = targetGroup.chats
+                .map(chatId => {
+                    const filePath = path.join(groupChatsDir, `${chatId}.jsonl`);
+                    if (!fs.existsSync(filePath)) return null;
+                    const stats = fs.statSync(filePath);
+                    return {
+                        file_name: chatId,
+                        file_size: formatBytes(stats.size),
+                        path: filePath,
+                    };
+                })
+                .filter(x => x);
+        } else {
+            // Regular character chat directory
+            const character_name = avatar_url.replace('.png', '');
+            const directoryPath = path.join(request.user.directories.chats, character_name);
+
+            if (!fs.existsSync(directoryPath)) {
+                return response.send([]);
+            }
+
+            chatFiles = fs.readdirSync(directoryPath)
+                .filter(file => file.endsWith('.jsonl'))
+                .map(fileName => {
+                    const filePath = path.join(directoryPath, fileName);
+                    const stats = fs.statSync(filePath);
+                    return {
+                        file_name: fileName,
+                        file_size: formatBytes(stats.size),
+                        path: filePath,
+                    };
+                });
+        }
+
+        const results = [];
+
+        // Search logic
+        for (const chatFile of chatFiles) {
+            const data = fs.readFileSync(chatFile.path, 'utf8');
+            const messages = data.split('\n')
+                .map(line => { try { return JSON.parse(line); } catch (_) { return null; } })
+                .filter(x => x && typeof x.mes === 'string');
+
+            if (query && messages.length === 0) {
                 continue;
             }
 
-            const buttonTemplate = template.find('.actionButtonTemplate .actionButton').clone();
-            if (scraper.iconAvailable) {
-                buttonTemplate.find('.actionButtonIcon').addClass(scraper.iconClass);
-                buttonTemplate.find('.actionButtonImg').remove();
-            } else {
-                buttonTemplate.find('.actionButtonImg').attr('src', scraper.iconClass);
-                buttonTemplate.find('.actionButtonIcon').remove();
-            }
-            buttonTemplate.find('.actionButtonText').text(scraper.name);
-            buttonTemplate.attr('title', scraper.description);
-            buttonTemplate.on('click', () => {
-                const target = modal.attr('data-attachment-manager-target');
-                runScraper(scraper.id, target, renderAttachments);
-            });
-            modal.append(buttonTemplate);
-        }
+            const lastMessage = messages[messages.length - 1];
+            const lastMesDate = lastMessage?.send_date || Math.round(fs.statSync(chatFile.path).mtimeMs);
 
-        const modalButtonData = Object.entries(sources).map(entry => {
-            const [source, selector] = entry;
-            const button = template.find(selector).find('.openActionModalButton').get(0);
-
-            if (!button) {
-                return;
+            // If no search query, just return metadata
+            if (!query) {
+                results.push({
+                    file_name: chatFile.file_name,
+                    file_size: chatFile.file_size,
+                    message_count: messages.length,
+                    last_mes: lastMesDate,
+                    preview_message: getPreviewMessage(messages),
+                });
+                continue;
             }
 
-            const bodyListener = (e) => {
-                if (modal.is(':visible') && (!$(e.target).closest('.openActionModalButton').length)) {
-                    modal.hide();
-                }
+            // Search through title and messages of the chat
+            const fragments = query.trim().toLowerCase().split(/\s+/).filter(x => x);
+            const text = [path.parse(chatFile.path).name, ...messages.map(message => message?.mes)].join('\n').toLowerCase();
+            const hasMatch = fragments.every(fragment => text.includes(fragment));
 
-                // Replay a click if the modal was already open by another button
-                if ($(e.target).closest('.openActionModalButton').length && !modal.is(':visible')) {
-                    modal.show();
-                }
-            };
-            document.body.addEventListener('click', bodyListener);
-
-            const popper = Popper.createPopper(button, modal.get(0), { placement: 'bottom-end' });
-            button.addEventListener('click', () => {
-                modal.attr('data-attachment-manager-target', source);
-                modal.toggle();
-                popper.update();
-            });
-
-            return { popper, bodyListener };
-        }).filter(Boolean);
-
-        return () => {
-            modalButtonData.forEach(p => {
-                const { popper, bodyListener } = p;
-                popper.destroy();
-                document.body.removeEventListener('click', bodyListener);
-            });
-            modal.remove();
-        };
-    }
-
-    async function renderAttachments() {
-        /** @type {FileAttachment[]} */
-        const globalAttachments = extension_settings.attachments ?? [];
-        /** @type {FileAttachment[]} */
-        const chatAttachments = chat_metadata.attachments ?? [];
-        /** @type {FileAttachment[]} */
-        const characterAttachments = extension_settings.character_attachments?.[characters[this_chid]?.avatar] ?? [];
-
-        await renderList(globalAttachments, ATTACHMENT_SOURCE.GLOBAL);
-        await renderList(chatAttachments, ATTACHMENT_SOURCE.CHAT);
-        await renderList(characterAttachments, ATTACHMENT_SOURCE.CHARACTER);
-
-        const isNotCharacter = this_chid === undefined || selected_group;
-        const isNotInChat = getCurrentChatId() === undefined;
-        template.find('.characterAttachmentsBlock').toggle(!isNotCharacter);
-        template.find('.chatAttachmentsBlock').toggle(!isNotInChat);
-
-        const characterName = characters[this_chid]?.name || 'Anonymous';
-        template.find('.characterAttachmentsName').text(characterName);
-
-        const chatName = getCurrentChatId() || 'Unnamed chat';
-        template.find('.chatAttachmentsName').text(chatName);
-    }
-
-    const dragDropHandler = new DragAndDropHandler('.popup', async (files, event) => {
-        let selectedTarget = ATTACHMENT_SOURCE.GLOBAL;
-        const targets = getAvailableTargets();
-
-        const targetSelectTemplate = $(await renderExtensionTemplateAsync('attachments', 'files-dropped', { count: files.length, targets: targets }));
-        targetSelectTemplate.find('.droppedFilesTarget').on('input', function () {
-            selectedTarget = String($(this).val());
-        });
-        const result = await callGenericPopup(targetSelectTemplate, POPUP_TYPE.CONFIRM, '', { wide: false, large: false, okButton: 'Upload', cancelButton: 'Cancel' });
-        if (result !== POPUP_RESULT.AFFIRMATIVE) {
-            console.log('File upload cancelled');
-            return;
-        }
-        for (const file of files) {
-            await uploadFileAttachmentToServer(file, selectedTarget);
-        }
-        renderAttachments();
-    });
-
-    let sortField = accountStorage.getItem('DataBank_sortField') || 'created';
-    let sortOrder = accountStorage.getItem('DataBank_sortOrder') || 'desc';
-    let filterString = '';
-
-    const template = $(await renderExtensionTemplateAsync('attachments', 'manager', {}));
-
-    template.find('.attachmentSearch').on('input', function () {
-        filterString = String($(this).val());
-        renderAttachments();
-    });
-    template.find('.attachmentSort').on('change', function () {
-        if (!(this instanceof HTMLSelectElement) || this.selectedOptions.length === 0) {
-            return;
-        }
-
-        sortField = this.selectedOptions[0].dataset.sortField;
-        sortOrder = this.selectedOptions[0].dataset.sortOrder;
-        accountStorage.setItem('DataBank_sortField', sortField);
-        accountStorage.setItem('DataBank_sortOrder', sortOrder);
-        renderAttachments();
-    });
-    function handleBulkAction(action) {
-        return async () => {
-            const selectedAttachments = document.querySelectorAll('.attachmentListItemCheckboxContainer .attachmentListItemCheckbox:checked');
-
-            if (selectedAttachments.length === 0) {
-                toastr.info(t`No attachments selected.`, t`Data Bank`);
-                return;
-            }
-
-            if (action.confirmMessage) {
-                const confirm = await callGenericPopup(action.confirmMessage, POPUP_TYPE.CONFIRM);
-                if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
-                    return;
-                }
-            }
-
-            const includeDisabled = true;
-            const attachments = getDataBankAttachments(includeDisabled);
-            selectedAttachments.forEach(async (checkbox) => {
-                const listItem = checkbox.closest('.attachmentListItem');
-                if (!(listItem instanceof HTMLElement)) {
-                    return;
-                }
-                const url = listItem.dataset.attachmentUrl;
-                const source = listItem.dataset.attachmentSource;
-                const attachment = attachments.find(a => a.url === url);
-                if (!attachment) {
-                    return;
-                }
-                await action.perform(attachment, source);
-            });
-
-            document.querySelectorAll('.attachmentListItemCheckbox, .attachmentsBulkEditCheckbox').forEach(checkbox => {
-                if (checkbox instanceof HTMLInputElement) {
-                    checkbox.checked = false;
-                }
-            });
-
-            await renderAttachments();
-        };
-    }
-
-    template.find('.bulkActionDisable').on('click', handleBulkAction({
-        perform: (attachment) => disableAttachment(attachment, () => { }),
-    }));
-
-    template.find('.bulkActionEnable').on('click', handleBulkAction({
-        perform: (attachment) => enableAttachment(attachment, () => { }),
-    }));
-
-    template.find('.bulkActionDelete').on('click', handleBulkAction({
-        confirmMessage: 'Are you sure you want to delete the selected attachments?',
-        perform: async (attachment, source) => await deleteAttachment(attachment, source, () => { }, false),
-    }));
-
-    template.find('.bulkActionSelectAll').on('click', () => {
-        $('.attachmentListItemCheckbox:visible').each((_, checkbox) => {
-            if (checkbox instanceof HTMLInputElement) {
-                checkbox.checked = true;
-            }
-        });
-    });
-    template.find('.bulkActionSelectNone').on('click', () => {
-        $('.attachmentListItemCheckbox:visible').each((_, checkbox) => {
-            if (checkbox instanceof HTMLInputElement) {
-                checkbox.checked = false;
-            }
-        });
-    });
-
-    const cleanupFn = await renderButtons();
-    await verifyAttachments();
-    await renderAttachments();
-    await callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: true, large: true, okButton: 'Close', allowVerticalScrolling: true });
-
-    cleanupFn();
-    dragDropHandler.destroy();
-}
-
-/**
- * Gets a list of available targets for attachments.
- * @returns {string[]} List of available targets
- */
-function getAvailableTargets() {
-    const targets = Object.values(ATTACHMENT_SOURCE);
-
-    const isNotCharacter = this_chid === undefined || selected_group;
-    const isNotInChat = getCurrentChatId() === undefined;
-
-    if (isNotCharacter) {
-        targets.splice(targets.indexOf(ATTACHMENT_SOURCE.CHARACTER), 1);
-    }
-
-    if (isNotInChat) {
-        targets.splice(targets.indexOf(ATTACHMENT_SOURCE.CHAT), 1);
-    }
-
-    return targets;
-}
-
-/**
- * Runs a known scraper on a source and saves the result as an attachment.
- * @param {string} scraperId Id of the scraper
- * @param {string} target Target for the attachment
- * @param {function} callback Callback function
- * @returns {Promise<void>} A promise that resolves when the source is scraped.
- */
-async function runScraper(scraperId, target, callback) {
-    try {
-        console.log(`Running scraper ${scraperId} for ${target}`);
-        const files = await ScraperManager.runDataBankScraper(scraperId);
-
-        if (!Array.isArray(files)) {
-            console.warn('Scraping returned nothing');
-            return;
-        }
-
-        if (files.length === 0) {
-            console.warn('Scraping returned no files');
-            toastr.info(t`No files were scraped.`, t`Data Bank`);
-            return;
-        }
-
-        for (const file of files) {
-            await uploadFileAttachmentToServer(file, target);
-        }
-
-        toastr.success(t`Scraped ${files.length} files from ${scraperId} to ${target}.`, t`Data Bank`);
-        callback();
-    }
-    catch (error) {
-        console.error('Scraping failed', error);
-        toastr.error(t`Check browser console for details.`, t`Scraping failed`);
-    }
-}
-
-/**
- * Uploads a file attachment to the server.
- * @param {File} file File to upload
- * @param {string} target Target for the attachment
- * @returns {Promise<string>} Path to the uploaded file
- */
-export async function uploadFileAttachmentToServer(file, target) {
-    const isValid = await validateFile(file);
-
-    if (!isValid) {
-        return;
-    }
-
-    let base64Data = await getBase64Async(file);
-    const slug = getStringHash(file.name);
-    const uniqueFileName = `${Date.now()}_${slug}.txt`;
-
-    if (isConvertible(file.type)) {
-        try {
-            const converter = getConverter(file.type);
-            const fileText = await converter(file);
-            base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
-        } catch (error) {
-            toastr.error(String(error), t`Could not convert file`);
-            console.error('Could not convert file', error);
-        }
-    } else {
-        const fileText = await file.text();
-        base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
-    }
-
-    const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data);
-    const convertedSize = Math.round(base64Data.length * 0.75);
-
-    if (!fileUrl) {
-        return;
-    }
-
-    const attachment = {
-        url: fileUrl,
-        size: convertedSize,
-        name: file.name,
-        created: Date.now(),
-    };
-
-    ensureAttachmentsExist();
-
-    switch (target) {
-        case ATTACHMENT_SOURCE.GLOBAL:
-            extension_settings.attachments.push(attachment);
-            saveSettingsDebounced();
-            break;
-        case ATTACHMENT_SOURCE.CHAT:
-            chat_metadata.attachments.push(attachment);
-            saveMetadataDebounced();
-            break;
-        case ATTACHMENT_SOURCE.CHARACTER:
-            extension_settings.character_attachments[characters[this_chid]?.avatar].push(attachment);
-            saveSettingsDebounced();
-            break;
-    }
-
-    return fileUrl;
-}
-
-function ensureAttachmentsExist() {
-    if (!Array.isArray(extension_settings.disabled_attachments)) {
-        extension_settings.disabled_attachments = [];
-    }
-
-    if (!Array.isArray(extension_settings.attachments)) {
-        extension_settings.attachments = [];
-    }
-
-    if (!Array.isArray(chat_metadata.attachments)) {
-        chat_metadata.attachments = [];
-    }
-
-    if (this_chid !== undefined && characters[this_chid]) {
-        if (!extension_settings.character_attachments) {
-            extension_settings.character_attachments = {};
-        }
-
-        if (!Array.isArray(extension_settings.character_attachments[characters[this_chid].avatar])) {
-            extension_settings.character_attachments[characters[this_chid].avatar] = [];
-        }
-    }
-}
-
-/**
- * Gets all currently available attachments. Ignores disabled attachments by default.
- * @param {boolean} [includeDisabled=false] If true, include disabled attachments
- * @returns {FileAttachment[]} List of attachments
- */
-export function getDataBankAttachments(includeDisabled = false) {
-    ensureAttachmentsExist();
-    const globalAttachments = extension_settings.attachments ?? [];
-    const chatAttachments = chat_metadata.attachments ?? [];
-    const characterAttachments = extension_settings.character_attachments?.[characters[this_chid]?.avatar] ?? [];
-
-    return [...globalAttachments, ...chatAttachments, ...characterAttachments].filter(x => includeDisabled || !isAttachmentDisabled(x));
-}
-
-/**
- * Gets all attachments for a specific source. Includes disabled attachments by default.
- * @param {string} source Attachment source
- * @param {boolean} [includeDisabled=true] If true, include disabled attachments
- * @returns {FileAttachment[]} List of attachments
- */
-export function getDataBankAttachmentsForSource(source, includeDisabled = true) {
-    ensureAttachmentsExist();
-
-    function getBySource() {
-        switch (source) {
-            case ATTACHMENT_SOURCE.GLOBAL:
-                return extension_settings.attachments ?? [];
-            case ATTACHMENT_SOURCE.CHAT:
-                return chat_metadata.attachments ?? [];
-            case ATTACHMENT_SOURCE.CHARACTER:
-                return extension_settings.character_attachments?.[characters[this_chid]?.avatar] ?? [];
-        }
-
-        return [];
-    }
-
-    return getBySource().filter(x => includeDisabled || !isAttachmentDisabled(x));
-}
-
-/**
- * Verifies all attachments in the Data Bank.
- * @returns {Promise<void>} A promise that resolves when attachments are verified.
- */
-async function verifyAttachments() {
-    for (const source of Object.values(ATTACHMENT_SOURCE)) {
-        await verifyAttachmentsForSource(source);
-    }
-}
-
-/**
- * Verifies all attachments for a specific source.
- * @param {string} source Attachment source
- * @returns {Promise<void>} A promise that resolves when attachments are verified.
- */
-async function verifyAttachmentsForSource(source) {
-    try {
-        const attachments = getDataBankAttachmentsForSource(source);
-        const urls = attachments.map(a => a.url);
-        const response = await fetch('/api/files/verify', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ urls }),
-        });
-
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(error);
-        }
-
-        const verifiedUrls = await response.json();
-        for (const attachment of attachments) {
-            if (verifiedUrls[attachment.url] === false) {
-                console.log('Deleting orphaned attachment', attachment);
-                await deleteAttachment(attachment, source, () => { }, false);
+            if (hasMatch) {
+                results.push({
+                    file_name: chatFile.file_name,
+                    file_size: chatFile.file_size,
+                    message_count: messages.length,
+                    last_mes: lastMesDate,
+                    preview_message: getPreviewMessage(messages),
+                });
             }
         }
+
+        // Sort by last message date descending
+        results.sort((a, b) => new Date(b.last_mes).getTime() - new Date(a.last_mes).getTime());
+        return response.send(results);
+
     } catch (error) {
-        console.error('Attachment verification failed', error);
+        console.error('Chat search error:', error);
+        return response.status(500).json({ error: 'Search failed' });
     }
-}
+});
 
-const NEUTRAL_CHAT_KEY = 'neutralChat';
+router.post('/recent', async function (request, response) {
+    try {
+        /** @type {{pngFile?: string, groupId?: string, filePath: string, mtime: number}[]} */
+        const allChatFiles = [];
 
-export function preserveNeutralChat() {
-    if (this_chid !== undefined || selected_group || name2 !== neutralCharacterName) {
-        return;
-    }
+        const getCharacterChatFiles = async () => {
+            const pngDirents = await fs.promises.readdir(request.user.directories.characters, { withFileTypes: true });
+            const pngFiles = pngDirents.filter(e => e.isFile() && path.extname(e.name) === '.png').map(e => e.name);
 
-    sessionStorage.setItem(NEUTRAL_CHAT_KEY, JSON.stringify({ chat, chat_metadata }));
-}
+            for (const pngFile of pngFiles) {
+                const chatsDirectory = pngFile.replace('.png', '');
+                const pathToChats = path.join(request.user.directories.chats, chatsDirectory);
+                if (!fs.existsSync(pathToChats)) {
+                    continue;
+                }
+                const pathStats = await fs.promises.stat(pathToChats);
+                if (pathStats.isDirectory()) {
+                    const chatFiles = await fs.promises.readdir(pathToChats);
+                    const jsonlFiles = chatFiles.filter(file => path.extname(file) === '.jsonl');
 
-export function restoreNeutralChat() {
-    if (this_chid !== undefined || selected_group || name2 !== neutralCharacterName) {
-        return;
-    }
-
-    const neutralChat = sessionStorage.getItem(NEUTRAL_CHAT_KEY);
-    if (!neutralChat) {
-        return;
-    }
-
-    const { chat: neutralChatData, chat_metadata: neutralChatMetadata } = JSON.parse(neutralChat);
-    chat.splice(0, chat.length, ...neutralChatData);
-    updateChatMetadata(neutralChatMetadata, true);
-    sessionStorage.removeItem(NEUTRAL_CHAT_KEY);
-}
-
-/**
- * Registers a file converter function.
- * @param {string} mimeType MIME type
- * @param {ConverterFunction} converter Function to convert file
- * @returns {void}
- */
-export function registerFileConverter(mimeType, converter) {
-    if (typeof mimeType !== 'string' || typeof converter !== 'function') {
-        console.error('Invalid converter registration');
-        return;
-    }
-
-    if (Object.keys(converters).includes(mimeType)) {
-        console.error('Converter already registered');
-        return;
-    }
-
-    converters[mimeType] = converter;
-}
-
-export function initChatUtilities() {
-    $(document).on('click', '.mes_hide', async function () {
-        const messageBlock = $(this).closest('.mes');
-        const messageId = Number(messageBlock.attr('mesid'));
-        await hideChatMessageRange(messageId, messageId, false);
-    });
-
-    $(document).on('click', '.mes_unhide', async function () {
-        const messageBlock = $(this).closest('.mes');
-        const messageId = Number(messageBlock.attr('mesid'));
-        await hideChatMessageRange(messageId, messageId, true);
-    });
-
-    $(document).on('click', '.mes_file_delete', async function () {
-        const messageBlock = $(this).closest('.mes');
-        const messageId = Number(messageBlock.attr('mesid'));
-        await deleteMessageFile(messageId);
-    });
-
-    $(document).on('click', '.mes_file_open', async function () {
-        const messageBlock = $(this).closest('.mes');
-        const messageId = Number(messageBlock.attr('mesid'));
-        await viewMessageFile(messageId);
-    });
-
-    $(document).on('click', '.assistant_note_export', async function () {
-        const chatToSave = [
-            {
-                user_name: name1,
-                character_name: name2,
-                chat_metadata: chat_metadata,
-            },
-            ...chat.filter(x => x?.extra?.type !== system_message_types.ASSISTANT_NOTE),
-        ];
-
-        download(chatToSave.map((m) => JSON.stringify(m)).join('\n'), `Assistant - ${humanizedDateTime()}.jsonl`, 'application/json');
-    });
-
-    $(document).on('click', '.assistant_note_import', async function () {
-        const importFile = async () => {
-            const file = fileInput.files[0];
-            if (!file) {
-                return;
-            }
-
-            try {
-                const text = await getFileText(file);
-                const lines = text.split('\n').filter(line => line.trim() !== '');
-                const messages = lines.map(line => JSON.parse(line));
-                const metadata = messages.shift()?.chat_metadata || {};
-                messages.unshift(getSystemMessageByType(system_message_types.ASSISTANT_NOTE));
-                await clearChat();
-                chat.splice(0, chat.length, ...messages);
-                updateChatMetadata(metadata, true);
-                await printMessages();
-            } catch (error) {
-                console.error('Error importing assistant chat:', error);
-                toastr.error(t`It's either corrupted or not a valid JSONL file.`, t`Failed to import chat`);
+                    for (const file of jsonlFiles) {
+                        const filePath = path.join(pathToChats, file);
+                        const stats = await fs.promises.stat(filePath);
+                        allChatFiles.push({ pngFile, filePath, mtime: stats.mtimeMs });
+                    }
+                }
             }
         };
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = '.jsonl';
-        fileInput.addEventListener('change', importFile);
-        fileInput.click();
-    });
 
-    // Do not change. #attachFile is added by extension.
-    $(document).on('click', '#attachFile', function () {
-        $('#file_form_input').trigger('click');
-    });
+        const getGroupChatFiles = async () => {
+            const groupDirents = await fs.promises.readdir(request.user.directories.groups, { withFileTypes: true });
+            const groups = groupDirents.filter(e => e.isFile() && path.extname(e.name) === '.json').map(e => e.name);
 
-    // Do not change. #manageAttachments is added by extension.
-    $(document).on('click', '#manageAttachments', function () {
-        openAttachmentManager();
-    });
+            for (const group of groups) {
+                try {
+                    const groupPath = path.join(request.user.directories.groups, group);
+                    const groupContents = await fs.promises.readFile(groupPath, 'utf8');
+                    const groupData = JSON.parse(groupContents);
 
-    $(document).on('click', '.mes_embed', function () {
-        const messageBlock = $(this).closest('.mes');
-        const messageId = Number(messageBlock.attr('mesid'));
-        embedMessageFile(messageId, messageBlock);
-    });
-
-    $(document).on('click', '.editor_maximize', async function () {
-        const broId = $(this).attr('data-for');
-        const bro = $(`#${broId}`);
-        const contentEditable = bro.is('[contenteditable]');
-        const withTab = $(this).attr('data-tab');
-
-        if (!bro.length) {
-            console.error('Could not find editor with id', broId);
-            return;
-        }
-
-        const wrapper = document.createElement('div');
-        wrapper.classList.add('height100p', 'wide100p', 'flex-container');
-        wrapper.classList.add('flexFlowColumn', 'justifyCenter', 'alignitemscenter');
-        const textarea = document.createElement('textarea');
-        textarea.dataset.for = broId;
-        textarea.value = String(contentEditable ? bro[0].innerText : bro.val());
-        textarea.classList.add('height100p', 'wide100p', 'maximized_textarea');
-        bro.hasClass('monospace') && textarea.classList.add('monospace');
-        bro.hasClass('mdHotkeys') && textarea.classList.add('mdHotkeys');
-        textarea.addEventListener('input', function () {
-            if (contentEditable) {
-                bro[0].innerText = textarea.value;
-                bro.trigger('input');
-            } else {
-                bro.val(textarea.value).trigger('input');
-            }
-        });
-        wrapper.appendChild(textarea);
-
-        if (withTab) {
-            textarea.addEventListener('keydown', (evt) => {
-                if (evt.key == 'Tab' && !evt.shiftKey && !evt.ctrlKey && !evt.altKey) {
-                    evt.preventDefault();
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    if (end - start > 0 && textarea.value.substring(start, end).includes('\n')) {
-                        const lineStart = textarea.value.lastIndexOf('\n', start);
-                        const count = textarea.value.substring(lineStart, end).split('\n').length - 1;
-                        textarea.value = `${textarea.value.substring(0, lineStart)}${textarea.value.substring(lineStart, end).replace(/\n/g, '\n\t')}${textarea.value.substring(end)}`;
-                        textarea.selectionStart = start + 1;
-                        textarea.selectionEnd = end + count;
-                    } else {
-                        textarea.value = `${textarea.value.substring(0, start)}\t${textarea.value.substring(end)}`;
-                        textarea.selectionStart = start + 1;
-                        textarea.selectionEnd = end + 1;
+                    if (Array.isArray(groupData.chats)) {
+                        for (const chat of groupData.chats) {
+                            const filePath = path.join(request.user.directories.groupChats, `${chat}.jsonl`);
+                            if (!fs.existsSync(filePath)) {
+                                continue;
+                            }
+                            const stats = await fs.promises.stat(filePath);
+                            allChatFiles.push({ groupId: groupData.id, filePath, mtime: stats.mtimeMs });
+                        }
                     }
-                } else if (evt.key == 'Tab' && evt.shiftKey && !evt.ctrlKey && !evt.altKey) {
-                    evt.preventDefault();
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    const lineStart = textarea.value.lastIndexOf('\n', start);
-                    const count = textarea.value.substring(lineStart, end).split('\n\t').length - 1;
-                    textarea.value = `${textarea.value.substring(0, lineStart)}${textarea.value.substring(lineStart, end).replace(/\n\t/g, '\n')}${textarea.value.substring(end)}`;
-                    textarea.selectionStart = start - 1;
-                    textarea.selectionEnd = end - count;
+                } catch (error) {
+                    // Skip group files that can't be read or parsed
+                    continue;
                 }
-            });
-        }
+            }
+        };
 
-        await callGenericPopup(wrapper, POPUP_TYPE.TEXT, '', { wide: true, large: true });
-    });
+        await Promise.allSettled([getCharacterChatFiles(), getGroupChatFiles()]);
 
-    $(document).on('click', 'body .mes .mes_text', function () {
-        if (!power_user.click_to_edit) return;
-        if (window.getSelection().toString()) return;
-        if ($('.edit_textarea').length) return;
-        $(this).closest('.mes').find('.mes_edit').trigger('click');
-    });
+        const max = parseInt(request.body.max ?? Number.MAX_SAFE_INTEGER);
+        const recentChats = allChatFiles.sort((a, b) => b.mtime - a.mtime).slice(0, max);
+        const jsonFilesPromise = recentChats.map((file) => {
+            return file.groupId
+                ? getChatInfo(file.filePath, { group: file.groupId }, true)
+                : getChatInfo(file.filePath, { avatar: file.pngFile }, false);
+        });
 
-    $(document).on('click', '.open_media_overrides', openExternalMediaOverridesDialog);
-    $(document).on('input', '#forbid_media_override_allowed', function () {
-        const entityId = getCurrentEntityId();
-        if (!entityId) return;
-        power_user.external_media_allowed_overrides.push(entityId);
-        power_user.external_media_forbidden_overrides = power_user.external_media_forbidden_overrides.filter((v) => v !== entityId);
-        saveSettingsDebounced();
-        reloadCurrentChat();
-    });
-    $(document).on('input', '#forbid_media_override_forbidden', function () {
-        const entityId = getCurrentEntityId();
-        if (!entityId) return;
-        power_user.external_media_forbidden_overrides.push(entityId);
-        power_user.external_media_allowed_overrides = power_user.external_media_allowed_overrides.filter((v) => v !== entityId);
-        saveSettingsDebounced();
-        reloadCurrentChat();
-    });
-    $(document).on('input', '#forbid_media_override_global', function () {
-        const entityId = getCurrentEntityId();
-        if (!entityId) return;
-        power_user.external_media_allowed_overrides = power_user.external_media_allowed_overrides.filter((v) => v !== entityId);
-        power_user.external_media_forbidden_overrides = power_user.external_media_forbidden_overrides.filter((v) => v !== entityId);
-        saveSettingsDebounced();
-        reloadCurrentChat();
-    });
+        const chatData = (await Promise.allSettled(jsonFilesPromise)).filter(x => x.status === 'fulfilled').map(x => x.value);
+        const validFiles = chatData.filter(i => i.file_name);
 
-    $('#creators_note_styles_button').on('click', function () {
-        openGlobalStylesPreferenceDialog();
-    });
-
-    $(document).on('click', '.mes_img', expandMessageImage);
-    $(document).on('click', '.mes_img_enlarge', expandAndZoomMessageImage);
-    $(document).on('click', '.mes_img_delete', deleteMessageImage);
-
-    $('#file_form_input').on('change', async () => {
-        const fileInput = document.getElementById('file_form_input');
-        if (!(fileInput instanceof HTMLInputElement)) return;
-        const file = fileInput.files[0];
-        await onFileAttach(file);
-    });
-    $('#file_form').on('reset', function () {
-        $('#file_form').addClass('displayNone');
-    });
-
-    document.getElementById('send_textarea').addEventListener('paste', async function (event) {
-        if (event.clipboardData.files.length === 0) {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const fileInput = document.getElementById('file_form_input');
-        if (!(fileInput instanceof HTMLInputElement)) return;
-
-        // Workaround for Firefox: Use a DataTransfer object to indirectly set fileInput.files
-        const dataTransfer = new DataTransfer();
-        for (let i = 0; i < event.clipboardData.files.length; i++) {
-            dataTransfer.items.add(event.clipboardData.files[i]);
-        }
-
-        fileInput.files = dataTransfer.files;
-        await onFileAttach(fileInput.files[0]);
-    });
-
-    eventSource.on(event_types.CHAT_CHANGED, checkForCreatorNotesStyles);
-}
+        return response.send(validFiles);
+    } catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
+});
