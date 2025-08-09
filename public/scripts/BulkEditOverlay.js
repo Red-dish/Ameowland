@@ -933,6 +933,19 @@ class ChatBulkManager {
         $('#chat_bulk_toggle').show();
     }
 
+    #disableNormalChatEvents() {    
+        // Remove all click handlers from chat elements  
+        $('.select_chat_block_wrapper').off('click');  
+        $('.select_chat_block').off('click');  
+    }    
+      
+    /**    
+     * Re-enable normal chat selection click events when exiting bulk mode      
+     */    
+    #enableNormalChatEvents() {    
+        // Don't manually re-attach handlers - displayPastChats() will handle this  
+        // when the chat list is refreshed after bulk operations  
+    }
 
     /**
      * Add bulk control UI elements to the chat manager
@@ -1064,44 +1077,59 @@ class ChatBulkManager {
             this.exitBulkMode();
         });
     }
-    /**
-     * Enter bulk selection mode
-     */
-    enterBulkMode() {
-        // Add checkboxes to each chat item only if they don't already exist
-        $('.select_chat_block_wrapper').each((index, element) => {
-            const $element = $(element);
-            const fileName = $element.find('.select_chat_block').attr('file_name');
-            if ($element.find(`.${ChatBulkManager.checkboxClass}`).length === 0) {
-                const checkbox = `<input type="checkbox" class="${ChatBulkManager.checkboxClass}" data-filename="${fileName}" style="margin-right: 10px;">`;
-                $element.find('.select_chat_block_filename').before(checkbox);
-            }
-            $element.addClass('bulk-mode');
-        });
 
-        // Show bulk controls and hide toggle button
-        $(`#${ChatBulkManager.bulkControlsId}`).show();
-        $('#chat_bulk_toggle').hide();
-        this.#updateUI();
+    enterBulkMode() {    
+        // Disable normal chat opening behavior    
+        this.#disableNormalChatEvents();    
+            
+        // Add checkboxes to each chat item only if they don't already exist    
+        $('.select_chat_block_wrapper').each((index, element) => {    
+            const $element = $(element);    
+            const fileName = $element.find('.select_chat_block').attr('file_name');    
+            if ($element.find(`.${ChatBulkManager.checkboxClass}`).length === 0) {    
+                const checkbox = `<input type="checkbox" class="${ChatBulkManager.checkboxClass}" data-filename="${fileName}" style="margin-right: 10px;">`;    
+                $element.find('.select_chat_block_filename').before(checkbox);    
+            }    
+            $element.addClass('bulk-mode');  
+              
+            // Make the select_chat_block read-only and unselectable  
+            const $chatBlock = $element.find('.select_chat_block');  
+            $chatBlock.addClass('bulk-mode-readonly');  
+            $chatBlock.css({  
+                'user-select': 'none',  
+                'pointer-events': 'none'  
+            });  
+        });    
+        
+        // Show bulk controls and hide toggle button    
+        $(`#${ChatBulkManager.bulkControlsId}`).show();    
+        $('#chat_bulk_toggle').hide();    
+        this.#updateUI();    
+    } 
+      
+    exitBulkMode() {    
+        // Re-enable normal chat opening behavior    
+        this.#enableNormalChatEvents();    
+            
+        // Remove checkboxes    
+        $(`.${ChatBulkManager.checkboxClass}`).remove();    
+        $('.select_chat_block_wrapper').removeClass('bulk-mode');  
+          
+        // Re-enable the select_chat_block elements  
+        $('.select_chat_block').removeClass('bulk-mode-readonly');  
+        $('.select_chat_block').css({  
+            'user-select': '',  
+            'pointer-events': ''  
+        });  
+        
+        // Hide bulk controls and show toggle button    
+        $(`#${ChatBulkManager.bulkControlsId}`).hide();    
+        $('#chat_bulk_toggle').show();    
+        
+        // Clear selections    
+        this.#selectedChats = [];    
+        this.#updateUI();    
     }
-
-    /**
-     * Exit bulk selection mode
-     */
-    exitBulkMode() {
-        // Remove checkboxes
-        $(`.${ChatBulkManager.checkboxClass}`).remove();
-        $('.select_chat_block_wrapper').removeClass('bulk-mode');
-
-        // Hide bulk controls and show toggle button
-        $(`#${ChatBulkManager.bulkControlsId}`).hide();
-        $('#chat_bulk_toggle').show();
-
-        // Clear selections
-        this.#selectedChats = [];
-        this.#updateUI();
-    }
-
     /**
      * Update UI state based on selections
      */
