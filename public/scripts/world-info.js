@@ -33,7 +33,8 @@ const botmakersMap = {
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli"],
-    "wish":["bb-wish-taizi"]
+    "wish":["bb-wish-taizi"],
+    "yina":["bb-yina-kaelen"]
 };
 
 /**
