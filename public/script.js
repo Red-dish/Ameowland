@@ -249,7 +249,7 @@ import {
 } from './scripts/personas.js';
 import { getBackgrounds, initBackgrounds, loadBackgroundSettings, background_settings } from './scripts/backgrounds.js';
 import { hideLoader, showLoader } from './scripts/loader.js';
-import { BulkEditOverlay, CharacterContextMenu, chatBulkManager } from './scripts/BulkEditOverlay.js';
+import { BulkEditOverlay, CharacterContextMenu } from './scripts/BulkEditOverlay.js';
 import {
     loadFeatherlessModels,
     loadMancerModels,
@@ -1941,112 +1941,6 @@ export async function deleteCharacterChatByName(characterId, fileName) {
     }
 
     await eventSource.emit(event_types.CHAT_DELETED, fileName);
-}
-
-/**
- * Deletes multiple chat files for the current character in bulk.
- * @param {string[]} chatFiles Array of chat file names (with .jsonl extension)
- * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
- */
-export async function bulkDelChat(chatFiles) {
-    if (!Array.isArray(chatFiles) || chatFiles.length === 0) {
-        console.warn('No chat files provided for bulk deletion');
-        return { success: [], failed: [], total: 0 };
-    }
-
-    const response = await fetch('/api/chats/delete/bulk', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfiles: chatFiles,
-            avatar_url: characters[this_chid].avatar,
-        }),
-    });
-
-    if (!response.ok) {
-        console.error('Failed to bulk delete chats');
-        throw new Error('Bulk delete request failed');
-    }
-
-    const result = await response.json();
-    
-    // Check if current chat was deleted and switch to another one
-    const currentChatFile = `${characters[this_chid].chat}.jsonl`;
-    if (result.success.includes(currentChatFile)) {
-        chat_metadata = {};
-        await replaceCurrentChat();
-    }
-
-    // Emit events for successfully deleted chats
-    for (const deletedFile of result.success) {
-        const name = deletedFile.replace('.jsonl', '');
-        await eventSource.emit(event_types.CHAT_DELETED, name);
-    }
-
-    return result;
-}
-
-/**
- * Deletes multiple character chats by their names for a specific character.
- * @param {string} characterId Character ID to delete chats for
- * @param {string[]} fileNames Array of chat file names to delete (without .jsonl extension)
- * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
- */
-export async function bulkDeleteCharacterChatsByName(characterId, fileNames) {
-    if (!Array.isArray(fileNames) || fileNames.length === 0) {
-        console.warn('No file names provided for bulk deletion');
-        return { success: [], failed: [], total: 0 };
-    }
-
-    // Make sure all the data is loaded.
-    await unshallowCharacter(characterId);
-
-    /** @type {import('./scripts/char-data.js').v1CharData} */
-    const character = characters[characterId];
-    if (!character) {
-        console.warn(`Character with ID ${characterId} not found.`);
-        throw new Error(`Character with ID ${characterId} not found`);
-    }
-
-    // Convert file names to include .jsonl extension
-    const chatFiles = fileNames.map(name => `${name}.jsonl`);
-
-    const response = await fetch('/api/chats/delete/bulk', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfiles: chatFiles,
-            avatar_url: character.avatar,
-        }),
-    });
-
-    if (!response.ok) {
-        console.error('Failed to bulk delete chats for character.');
-        throw new Error('Bulk delete request failed');
-    }
-
-    const result = await response.json();
-
-    // Check if current chat was deleted and switch to another one
-    if (result.success.some(file => file.replace('.jsonl', '') === character.chat)) {
-        const chatsResponse = await fetch('/api/characters/chats', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ avatar_url: character.avatar }),
-        });
-        const chats = Object.values(await chatsResponse.json());
-        chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
-        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${humanizedDateTime()}`;
-        await updateRemoteChatName(characterId, newChatName);
-    }
-
-    // Emit events for successfully deleted chats
-    for (const deletedFile of result.success) {
-        const name = deletedFile.replace('.jsonl', '');
-        await eventSource.emit(event_types.CHAT_DELETED, name);
-    }
-
-    return result;
 }
 
 export async function replaceCurrentChat() {
@@ -8238,10 +8132,6 @@ export async function displayPastChats() {
         const searchQuery = $(this).val();
         debouncedDisplay(searchQuery);
     });
-
-    // Initialize bulk chat manager and reset state
-    chatBulkManager.initialize();
-    chatBulkManager.resetState();
 
     // UX convenience: Focus the search field when the Manage Chat Files view opens.
     setTimeout(function () {

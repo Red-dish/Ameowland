@@ -60,19 +60,6 @@
     --interactable-outline-color: var(--white100);
     --interactable-outline-color-faint: var(--white20a);
 
-    .select_chat_block.bulk-mode-readonly {  
-        opacity: 0.7;  
-        cursor: default !important;  
-    }  
-      
-    .select_chat_block_wrapper.bulk-mode {  
-        cursor: pointer;  
-    }  
-      
-    .select_chat_block_wrapper.bulk-mode:hover {  
-        background-color: rgba(255, 255, 255, 0.1);  
-    }
-
     --reasoning-body-color: var(--SmartThemeEmColor);
     --reasoning-em-color: color-mix(in srgb, var(--SmartThemeEmColor) 67%, var(--SmartThemeBlurTintColor) 33%);
     --reasoning-saturation: 0.5;
