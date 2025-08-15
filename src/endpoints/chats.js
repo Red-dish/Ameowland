@@ -532,53 +532,6 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
     return response.send('ok');
 });
 
-router.post('/delete/bulk', validateAvatarUrlMiddleware, function (request, response) {
-    const dirName = String(request.body.avatar_url).replace('.png', '');
-    const chatFiles = request.body.chatfiles;
-    
-    if (!Array.isArray(chatFiles) || chatFiles.length === 0) {
-        console.error('Invalid chatfiles array provided for bulk delete');
-        return response.sendStatus(400);
-    }
-
-    const results = {
-        success: [],
-        failed: []
-    };
-
-    for (const fileName of chatFiles) {
-        const filePath = path.join(request.user.directories.chats, dirName, sanitize(String(fileName)));
-        const chatFileExists = fs.existsSync(filePath);
-
-        if (!chatFileExists) {
-            console.error(`Chat file not found '${filePath}'`);
-            results.failed.push({
-                file: fileName,
-                error: 'File not found'
-            });
-            continue;
-        }
-
-        try {
-            fs.unlinkSync(filePath);
-            console.info(`Deleted chat file: ${filePath}`);
-            results.success.push(fileName);
-        } catch (error) {
-            console.error(`Failed to delete chat file '${filePath}':`, error);
-            results.failed.push({
-                file: fileName,
-                error: error.message
-            });
-        }
-    }
-
-    return response.send({
-        success: results.success,
-        failed: results.failed,
-        total: chatFiles.length
-    });
-});
-
 router.post('/export', validateAvatarUrlMiddleware, async function (request, response) {
     if (!request.body.file || (!request.body.avatar_url && request.body.is_group === false)) {
         return response.sendStatus(400);

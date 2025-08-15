@@ -19,7 +19,7 @@ export function readWorldInfoFile(directories, worldInfoName, allowDummy) {
         return dummyObject;
     }
 
-    const filename = `${worldInfoName}.json`;
+    const filename = sanitize(`${worldInfoName}.json`);
     const pathToWorldInfo = path.join(directories.worlds, filename);
 
     if (!fs.existsSync(pathToWorldInfo)) {
@@ -114,20 +114,10 @@ router.post('/edit', (request, response) => {
         return response.status(400).send('Is not a valid world info file');
     }
 
-    const filename = `${sanitize(request.body.name)}.json`;
+    const filename = sanitize(`${request.body.name}.json`);
     const pathToFile = path.join(request.user.directories.worlds, filename);
 
-    let targetPath = pathToFile;
-    try {
-        const stats = fs.lstatSync(pathToFile);
-        if (stats.isSymbolicLink()) {
-            targetPath = fs.readlinkSync(pathToFile);
-            console.log(`File ${pathToFile} is a symlink, writing to target: ${targetPath}`);
-        }
-    } catch (err) {
-        console.error(`Error checking if ${pathToFile} is a symlink: ${err.message}`);
-    }
-    writeFileAtomicSync(targetPath, JSON.stringify(request.body.data, null, 4));
+    writeFileAtomicSync(pathToFile, JSON.stringify(request.body.data, null, 4));
 
     return response.send({ ok: true });
 });

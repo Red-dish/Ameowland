@@ -22,6 +22,8 @@ import { invalidateThumbnail } from './thumbnails.js';
 import { importRisuSprites } from './sprites.js';
 import { getUserDirectories } from '../users.js';
 import { getChatInfo } from './chats.js';
+import { ByafParser } from '../byaf.js';
+import cacheBuster from '../middleware/cacheBuster.js';
 
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
@@ -57,18 +59,6 @@ class DiskCache {
      * @readonly
      */
     syncQueue = new Set();
-
-    /**
-     * Gets user-specific cache key for multi-user mode.
-     * @param {string} inputFile - Path to the image file
-     * @param {string} userHandle - User handle
-     * @returns {string} - User-specific cache key
-     */
-    getUserSpecificCacheKey(inputFile, userHandle) {
-        const baseCacheKey = getCacheKey(inputFile);
-        const multiUserMode = getConfigValue('enableUserAccounts', false, 'boolean');
-        return multiUserMode ? `${userHandle}-${baseCacheKey}` : baseCacheKey;
-    }
 
     /**
      * Path to the cache directory.
@@ -167,92 +157,6 @@ class DiskCache {
 export const diskCache = new DiskCache();
 
 /**
- * User-specific metadata manager for multi-user mode
- */
-class UserMetadataManager {
-    /**
-     * Gets user-specific metadata path
-     * @param {import('../users.js').UserDirectoryList} directories User directories
-     * @returns {string} Path to user metadata file
-     */
-    getUserMetadataPath(directories) {
-        return path.join(directories.root, 'character-metadata.json');
-    }
-
-    /**
-     * Reads user-specific metadata for a character
-     * @param {string} characterFile Character filename
-     * @param {import('../users.js').UserDirectoryList} directories User directories
-     * @returns {Object} User-specific metadata
-     */
-    getUserMetadata(characterFile, directories) {
-        const multiUserMode = getConfigValue('enableUserAccounts', false, 'boolean');
-        if (!multiUserMode) {
-            return {};
-        }
-
-        const metadataPath = this.getUserMetadataPath(directories);
-        try {
-            if (fs.existsSync(metadataPath)) {
-                const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-                return metadata[characterFile] || {};
-            }
-        } catch (err) {
-            console.error(`Error reading user metadata: ${err.message}`);
-        }
-        return {};
-    }
-
-    /**
-     * Saves user-specific metadata for a character
-     * @param {string} characterFile Character filename
-     * @param {Object} metadata User-specific metadata
-     * @param {import('../users.js').UserDirectoryList} directories User directories
-     */
-    setUserMetadata(characterFile, metadata, directories) {
-        const multiUserMode = getConfigValue('enableUserAccounts', false, 'boolean');
-        if (!multiUserMode) {
-            return;
-        }
-
-        const metadataPath = this.getUserMetadataPath(directories);
-        try {
-            let allMetadata = {};
-            if (fs.existsSync(metadataPath)) {
-                allMetadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-            }
-            
-            allMetadata[characterFile] = { ...allMetadata[characterFile], ...metadata };
-            writeFileAtomicSync(metadataPath, JSON.stringify(allMetadata, null, 2));
-        } catch (err) {
-            console.error(`Error saving user metadata: ${err.message}`);
-        }
-    }
-
-    /**
-     * Merges character data with user-specific metadata
-     * @param {Object} characterData Base character data
-     * @param {Object} userMetadata User-specific metadata
-     * @returns {Object} Merged character data
-     */
-    mergeWithUserData(characterData, userMetadata) {
-        const merged = { ...characterData };
-
-        // Apply user-specific overrides
-        if (userMetadata.fav !== undefined) {
-            merged.fav = userMetadata.fav;
-            if (merged.data && merged.data.extensions) {
-                merged.data.extensions.fav = userMetadata.fav;
-            }
-        }
-
-        return merged;
-    }
-}
-
-const userMetadata = new UserMetadataManager();
-
-/**
  * Gets the cache key for the specified image file.
  * @param {string} inputFile - Path to the image file
  * @returns {string} - Cache key
@@ -270,35 +174,14 @@ function getCacheKey(inputFile) {
  * Reads the character card from the specified image file.
  * @param {string} inputFile - Path to the image file
  * @param {string} inputFormat - 'png'
- * @param {import('../users.js').UserDirectoryList} [directories] - User directories (for user-specific data)
- * @returns {Promise<string | undefined>} - Character card data with user-specific metadata applied
+ * @returns {Promise<string | undefined>} - Character card data
  */
-async function readCharacterData(inputFile, inputFormat = 'png', directories = undefined) {
+async function readCharacterData(inputFile, inputFormat = 'png') {
     const cacheKey = getCacheKey(inputFile);
-    const userSpecificCacheKey = directories ? 
-        diskCache.getUserSpecificCacheKey(inputFile, path.basename(directories.root)) : 
-        cacheKey;
-
-    // Check memory cache first
-    if (memoryCache.has(userSpecificCacheKey)) {
-        return memoryCache.get(userSpecificCacheKey);
+    if (memoryCache.has(cacheKey)) {
+        return memoryCache.get(cacheKey);
     }
-
-    // Check disk cache for user-specific data
-    if (useDiskCache && directories) {
-        try {
-            const cache = await diskCache.instance();
-            const cachedData = await cache.getItem(userSpecificCacheKey);
-            if (cachedData) {
-                return cachedData;
-            }
-        } catch (error) {
-            console.warn('Error while reading from disk cache:', error);
-        }
-    }
-
-    // Fall back to base cache key for shared data
-    if (useDiskCache && !directories) {
+    if (useDiskCache) {
         try {
             const cache = await diskCache.instance();
             const cachedData = await cache.getItem(cacheKey);
@@ -310,38 +193,17 @@ async function readCharacterData(inputFile, inputFormat = 'png', directories = u
         }
     }
 
-    // Parse from file
     const result = await parse(inputFile, inputFormat);
-    
-    // Apply user-specific metadata if directories provided
-    let finalResult = result;
-    if (directories) {
-        try {
-            const characterData = JSON.parse(result);
-            const filename = path.basename(inputFile);
-            const userData = userMetadata.getUserMetadata(filename, directories);
-            const mergedData = userMetadata.mergeWithUserData(characterData, userData);
-            finalResult = JSON.stringify(mergedData);
-        } catch (err) {
-            console.warn('Error applying user metadata:', err);
-            finalResult = result; // Fall back to original data
-        }
-    }
-
-    // Cache the result
-    const finalCacheKey = directories ? userSpecificCacheKey : cacheKey;
-    !isAndroid && memoryCache.set(finalCacheKey, finalResult);
-    
+    !isAndroid && memoryCache.set(cacheKey, result);
     if (useDiskCache) {
         try {
             const cache = await diskCache.instance();
-            await cache.setItem(finalCacheKey, finalResult);
+            await cache.setItem(cacheKey, result);
         } catch (error) {
             console.warn('Error while writing to disk cache:', error);
         }
     }
-    
-    return finalResult;
+    return result;
 }
 
 /**
@@ -410,13 +272,18 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
  */
 
 /**
- * Parses an image buffer and applies crop if defined.
- * @param {Buffer} buffer Buffer of the image
+ * Applies avatar crop and resize operations to an image.
+ * I couldn't fix the type issue, so the first argument has {any} type.
+ * @param {object} jimp Jimp image instance
  * @param {Crop|undefined} [crop] Crop parameters
- * @returns {Promise<Buffer>} Image buffer
+ * @returns {Promise<Buffer>} Processed image buffer
  */
-async function parseImageBuffer(buffer, crop) {
-    const image = await Jimp.fromBuffer(buffer);
+export async function applyAvatarCropResize(jimp, crop) {
+    if (!(jimp instanceof Jimp)) {
+        throw new TypeError('Expected a Jimp instance');
+    }
+
+    const image = /** @type {InstanceType<typeof Jimp>} */ (jimp);
     let finalWidth = image.bitmap.width, finalHeight = image.bitmap.height;
 
     // Apply crop if defined
@@ -437,6 +304,17 @@ async function parseImageBuffer(buffer, crop) {
 }
 
 /**
+ * Parses an image buffer and applies crop if defined.
+ * @param {Buffer} buffer Buffer of the image
+ * @param {Crop|undefined} [crop] Crop parameters
+ * @returns {Promise<Buffer>} Image buffer
+ */
+async function parseImageBuffer(buffer, crop) {
+    const image = await Jimp.fromBuffer(buffer);
+    return await applyAvatarCropResize(image, crop);
+}
+
+/**
  * Reads an image file and applies crop if defined.
  * @param {string} imgPath Path to the image file
  * @param {Crop|undefined} crop Crop parameters
@@ -445,23 +323,7 @@ async function parseImageBuffer(buffer, crop) {
 async function tryReadImage(imgPath, crop) {
     try {
         const rawImg = await Jimp.read(imgPath);
-        let finalWidth = rawImg.bitmap.width, finalHeight = rawImg.bitmap.height;
-
-        // Apply crop if defined
-        if (typeof crop == 'object' && [crop.x, crop.y, crop.width, crop.height].every(x => typeof x === 'number')) {
-            rawImg.crop({ x: crop.x, y: crop.y, w: crop.width, h: crop.height });
-            // Apply standard resize if requested
-            if (crop.want_resize) {
-                finalWidth = AVATAR_WIDTH;
-                finalHeight = AVATAR_HEIGHT;
-            } else {
-                finalWidth = crop.width;
-                finalHeight = crop.height;
-            }
-        }
-
-        rawImg.cover({ w: finalWidth, h: finalHeight });
-        return await rawImg.getBuffer(JimpMime.png);
+        return await applyAvatarCropResize(rawImg, crop);
     }
     // If it's an unsupported type of image (APNG) - just read the file as buffer
     catch (error) {
@@ -542,8 +404,7 @@ const toShallow = (character) => {
 const processCharacter = async (item, directories, { shallow }) => {
     try {
         const imgFile = path.join(directories.characters, item);
-        // Pass directories to get user-specific data
-        const imgData = await readCharacterData(imgFile, 'png', directories);
+        const imgData = await readCharacterData(imgFile);
         if (imgData === undefined) throw new Error('Failed to read character file');
 
         let jsonObject = getCharaCardV2(JSON.parse(imgData), directories, false);
@@ -848,6 +709,7 @@ function convertWorldInfoToCharacterBook(name, entries) {
                 match_character_depth_prompt: entry.matchCharacterDepthPrompt ?? false,
                 match_scenario: entry.matchScenario ?? false,
                 match_creator_notes: entry.matchCreatorNotes ?? false,
+                triggers: entry.triggers ?? [],
             },
         };
 
@@ -933,6 +795,18 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
     card.name = sanitize(card.name);
     const fileName = preservedFileName || getPngName(card.name, request.user.directories);
     const result = await writeCharacterData(avatar, JSON.stringify(card), fileName, request);
+    return result ? fileName : '';
+}
+
+async function importFromByaf(uploadPath, { request }, preservedFileName) {
+    const data = (await fsPromises.readFile(uploadPath)).buffer;
+    await fsPromises.unlink(uploadPath);
+    console.info('Importing from BYAF');
+
+    const byafData = await new ByafParser(data).parse();
+    const card = readFromV2(byafData.card);
+    const fileName = preservedFileName || getPngName(card.name, request.user.directories);
+    const result = await writeCharacterData(byafData.image, JSON.stringify(card), fileName, request);
     return result ? fileName : '';
 }
 
@@ -1123,7 +997,7 @@ router.post('/rename', validateAvatarUrlMiddleware, async function (request, res
 
     try {
         // Read old file, replace name int it
-        const rawOldData = await readCharacterData(oldAvatarPath, 'png', request.user.directories);
+        const rawOldData = await readCharacterData(oldAvatarPath);
         if (rawOldData === undefined) throw new Error('Failed to read character file');
 
         const oldData = getCharaCardV2(JSON.parse(rawOldData), request.user.directories);
@@ -1183,7 +1057,7 @@ router.post('/edit', validateAvatarUrlMiddleware, async function (request, respo
             fs.unlinkSync(newAvatarPath);
 
             // Bust cache to reload the new avatar
-            response.setHeader('Clear-Site-Data', '"cache"');
+            cacheBuster.bust(request, response);
         }
 
         return response.sendStatus(200);
@@ -1216,66 +1090,25 @@ router.post('/edit-attribute', validateAvatarUrlMiddleware, async function (requ
     }
 
     try {
-        const multiUserMode = getConfigValue('enableUserAccounts', false, 'boolean');
-        const attributeName = request.body.field;
-        const attributeValue = request.body.value;
-        
-        // Check if this is a user-specific attribute in multi-user mode
-        const userSpecificFields = ['fav', 'data.extensions.fav'];
-        const isUserSpecific = multiUserMode && userSpecificFields.includes(attributeName);
+        const avatarPath = path.join(request.user.directories.characters, request.body.avatar_url);
+        const charJSON = await readCharacterData(avatarPath);
+        if (typeof charJSON !== 'string') throw new Error('Failed to read character file');
 
-        if (isUserSpecific) {
-            // Handle user-specific metadata
-            const filename = request.body.avatar_url;
-            const currentMetadata = userMetadata.getUserMetadata(filename, request.user.directories);
-            
-            if (attributeName === 'fav' || attributeName === 'data.extensions.fav') {
-                currentMetadata.fav = attributeValue === 'true';
-            }
-            
-            userMetadata.setUserMetadata(filename, currentMetadata, request.user.directories);
-            
-            // Invalidate caches for this user
-            const userSpecificCacheKey = diskCache.getUserSpecificCacheKey(
-                path.join(request.user.directories.characters, filename), 
-                path.basename(request.user.directories.root)
-            );
-            memoryCache.delete(userSpecificCacheKey);
-            
-            console.log(`Updated user-specific metadata for ${filename}: ${attributeName} = ${attributeValue}`);
-            return response.sendStatus(200);
-        } else {
-            // Handle shared character data (writes to symlinked file)
-            const avatarPath = path.join(request.user.directories.characters, request.body.avatar_url);
-            // Don't pass directories to get base character data without user overlays
-            const charJSON = await readCharacterData(avatarPath);
-            if (typeof charJSON !== 'string') throw new Error('Failed to read character file');
-
-            const char = JSON.parse(charJSON);
-            //check if the field exists
-            if (char[request.body.field] === undefined && char.data[request.body.field] === undefined) {
-                console.warn('Error: invalid field.');
-                response.status(400).send('Error: invalid field.');
-                return;
-            }
-            char[request.body.field] = request.body.value;
-            char.data[request.body.field] = request.body.value;
-            let newCharJSON = JSON.stringify(char);
-            const targetFile = (request.body.avatar_url).replace('.png', '');
-            await writeCharacterData(avatarPath, newCharJSON, targetFile, request);
-            
-            // Invalidate all user caches for this character since shared data changed
-            for (const key of memoryCache.keys()) {
-                if (key.includes(targetFile)) {
-                    memoryCache.delete(key);
-                }
-            }
-            
-            return response.sendStatus(200);
+        const char = JSON.parse(charJSON);
+        //check if the field exists
+        if (char[request.body.field] === undefined && char.data[request.body.field] === undefined) {
+            console.warn('Error: invalid field.');
+            response.status(400).send('Error: invalid field.');
+            return;
         }
+        char[request.body.field] = request.body.value;
+        char.data[request.body.field] = request.body.value;
+        let newCharJSON = JSON.stringify(char);
+        const targetFile = (request.body.avatar_url).replace('.png', '');
+        await writeCharacterData(avatarPath, newCharJSON, targetFile, request);
+        return response.sendStatus(200);
     } catch (err) {
         console.error('An error occurred, character edit invalidated.', err);
-        return response.sendStatus(500);
     }
 });
 
@@ -1295,7 +1128,7 @@ router.post('/merge-attributes', getFileNameValidationFunction('avatar'), async 
         const update = request.body;
         const avatarPath = path.join(request.user.directories.characters, update.avatar);
 
-        const pngStringData = await readCharacterData(avatarPath, 'png', request.user.directories);
+        const pngStringData = await readCharacterData(avatarPath);
 
         if (!pngStringData) {
             console.error('Error: invalid character file.');
@@ -1380,7 +1213,8 @@ router.post('/all', async function (request, response) {
         return response.send(data);
     } catch (err) {
         console.error(err);
-        response.sendStatus(500);
+        const isRangeError = err instanceof RangeError;
+        response.status(500).send({ overflow: isRangeError, error: true });
     }
 });
 
@@ -1481,6 +1315,7 @@ router.post('/import', async function (request, response) {
         'json': importFromJson,
         'png': importFromPng,
         'charx': importFromCharX,
+        'byaf': importFromByaf,
     };
 
     try {
@@ -1579,7 +1414,7 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
             }
             case 'json': {
                 try {
-                    const json = await readCharacterData(filename, 'png', request.user.directories);
+                    const json = await readCharacterData(filename);
                     if (json === undefined) return response.sendStatus(400);
                     const jsonObject = getCharaCardV2(JSON.parse(json), request.user.directories);
                     unsetPrivateFields(jsonObject);
