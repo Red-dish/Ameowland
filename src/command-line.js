@@ -49,8 +49,8 @@ export class CommandLineParser {
      */
     getDefaultConfig(isGlobal) {
         const appPaths = envPaths('SillyTavern', { suffix: '' });
-        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : './config.yaml';
-        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : './data';
+        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : '/home/node/app/config.yaml';
+        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : '/home/node/app/data';
         return Object.freeze({
             configPath: configPath,
             dataRoot: dataPath,
