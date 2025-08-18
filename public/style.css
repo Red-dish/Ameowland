@@ -13,6 +13,7 @@
 @import url(css/welcome.css);
 @import url(css/data-maid.css);
 @import url(css/secrets.css);
+@import url(css/world-info.css);
 
 :root {
     interpolate-size: allow-keywords;
@@ -58,6 +59,19 @@
 
     --interactable-outline-color: var(--white100);
     --interactable-outline-color-faint: var(--white20a);
+
+    .select_chat_block.bulk-mode-readonly {  
+        opacity: 0.7;  
+        cursor: default !important;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode {  
+        cursor: pointer;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode:hover {  
+        background-color: rgba(255, 255, 255, 0.1);  
+    }
 
     --reasoning-body-color: var(--SmartThemeEmColor);
     --reasoning-em-color: color-mix(in srgb, var(--SmartThemeEmColor) 67%, var(--SmartThemeBlurTintColor) 33%);
@@ -295,11 +309,6 @@ table.responsiveTable {
     outline: 1px solid var(--interactable-outline-color);
 }
 
-/* Prevent the outline from being cut off by hiding the overflow */
-.tag.interactable:focus-visible {
-    outline-offset: -1px;
-}
-
 /* The specific input controls can always have a faint outline, even on mouse interaction, to give a better hint */
 select:focus-visible,
 input:focus-visible,
@@ -350,9 +359,8 @@ input[type='checkbox']:focus-visible {
 }
 
 .text_muted {
-    font-size: calc(var(--mainFontSize) - 0.2em);
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.7;
+    font-size: calc(var(--mainFontSize) - 0.2rem);
+    color: var(--white50a);
 }
 
 .mes[is_system="true"][ch_name="SillyTavern System"] .mes_text br {
@@ -1428,6 +1436,61 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     flex-wrap: wrap;
     overflow: hidden;
     max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+}
+
+/* --- Quick Character Selection ---  */
+#HotSwapWrapper .hotswap.avatars_inline {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    justify-content: center;
+    scroll-behavior: smooth;
+    max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+    -ms-overflow-style: none;
+    margin: 5px;
+    margin-right: 10px;
+    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+
+    *:focus {
+        outline: none;
+    }
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    @media screen and (max-width: 1000px) {
+        margin-right: 0;
+        justify-content: flex-start;
+    }
+}
+
+/* when using big avatars, increase the collapsed height */
+body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
+    max-height: calc(var(--avatar-base-width) * var(--big-avatar-width-factor) + 35px)
+}
+
+#HotSwapWrapper:hover .hotswap.avatars_inline {
+    /* you can tweak this 25dvh value as needed! */
+    max-height: 25dvh !important;
+    overflow: auto;
+    transition: all 1s cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    @media screen and (max-width: 1000px) {
+        /* you can tweak this 30dvh value as needed! */
+        max-height: 30dvh !important;
+    }
+}
+
+#HotSwapWrapper:not(:hover) .hotswap.avatars_inline {
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Continue with remaining styles */
+.avatars_inline_small .avatar,
+.avatars_inline_small .avatar img {
+    width: calc(var(--avatar-base-width) * var(--inline-avatar-small-factor));
+    height: calc(var(--avatar-base-height) * var(--inline-avatar-small-factor));
 }
 
 .bogus_folder_select .avatar {
@@ -3591,20 +3654,12 @@ grammarly-extension {
     align-items: baseline;
 }
 
-#creator_notes_spoiler:empty,
-#creator_notes_empty,
 #creators_note_desc_hidden {
     display: none;
 }
 
-#creator_notes_spoiler:empty~#creator_notes_empty {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-    font-size: calc(var(--mainFontSize) * 0.9);
-    color: var(--SmartThemeEmColor);
+#creators_notes_div:has(#spoiler_free_desc_button.fa-eye-slash) #creators_note_desc_hidden {
+    display: initial;
 }
 
 .alternate_greeting details {
@@ -5434,6 +5489,18 @@ body:has(#character_popup.open) #top-settings-holder:has(.drawer-content.openDra
     padding: 5px 0;
     cursor: pointer;
 }
+
+#p-lb {
+    filter: saturate(0.5);
+margin-right: 1em;
+opacity: 0.25;
+transition: 200ms;
+        &:hover {
+    opacity: 1;
+    filter: saturate(1.0);
+}
+}
+
 
 .inline-drawer-content {
     display: none;

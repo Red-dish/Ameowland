@@ -273,7 +273,7 @@ let power_user = {
 
     reasoning: {
         name: DEFAULT_REASONING_TEMPLATE,
-        auto_parse: false,
+        auto_parse: true,
         add_to_prompts: false,
         auto_expand: false,
         show_hidden: false,
