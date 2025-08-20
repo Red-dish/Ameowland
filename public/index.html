@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Ameowland</title>
+    <title>SillyTavern</title>
     <base href="/">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, viewport-fit=cover, initial-scale=1, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
@@ -79,7 +79,7 @@
                     </label>
                 </div>
                 <div id="clickSlidersTips" data-i18n="clickslidertips" class="toggle-description wide100p editable-slider-notification">
-                    AI ENGINE PRESET CONFIGURATION.
+                    Click slider numbers to input manually.
                 </div>
                 <div id="labModeWarning" class="redWarningBG textAlignCenter displayNone" data-i18n="MAD LAB MODE ON">MAD LAB MODE ON</div>
                 <a class="topRightInset" href="https://docs.sillytavern.app/usage/common-settings/" target="_blank" title="Documentation on sampling parameters." data-i18n="[title]Documentation on sampling parameters">
@@ -621,21 +621,14 @@
                                     <label class="checkbox_label">
                                         <input id="oai_max_context_unlocked" type="checkbox" />
                                         <span data-i18n="Unlocked Context Size">
-                                            Please do not play with any of the settings under this text unless you know what you are doing
+                                            Unlocked Context Size
                                         </span>
                                     </label>
-                                </div>
-                                <div class="range-block" data-source="openai,claude,windowai,openrouter,ai21,scale,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,01ai,nanogpt,deepseek,xai">
-                                        <div class="range-block-title" data-i18n="Temperature">
-                                            Temperature
-                                        </div>
-                                        <div class="range-block-range-and-counter">
-                                            <div class="range-block-range">
-                                                <input type="range" id="temp_openai" name="volume" min="0" max="2.0" step="0.01">
-                                            </div>
-                                            <div class="range-block-counter">
-                                                <input type="number" min="0" max="2.0" step="0.01" data-for="temp_openai" id="temp_counter_openai">
-                                            </div>
+                                    <div class="toggle-description justifyLeft">
+                                        <span data-i18n="Unrestricted maximum value for the context slider">
+                                            Unrestricted maximum value for the context size slider. Enable only if you know
+                                            what you're doing.
+                                        </span>
                                     </div>
                                 </div>
                                 <div class="range-block">
@@ -687,7 +680,7 @@
                                 <div class="range-block">
                                     <label for="stream_toggle" title="Enable OpenAI completion streaming" data-i18n="[title]Enable OpenAI completion streaming" class="checkbox_label widthFreeExpand">
                                         <input id="stream_toggle" type="checkbox" /><span data-i18n="Streaming">
-                                            Turn this on if its off</span>
+                                            Streaming</span>
                                     </label>
                                     <div class="toggle-description justifyLeft">
                                         <span data-i18n="Display the response bit by bit as it is generated.">
@@ -698,51 +691,20 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="range-block m-t-1" data-source="openai,aimlapi,openrouter,scale,custom">
-                                    <div id="logit_bias_openai" class="range-block-title openai_restorable" data-i18n="Logit Bias">
-                                        Anti-Repetition Settings
+                                <div class="range-block" data-source="openai,claude,aimlapi,openrouter,ai21,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,01ai,nanogpt,deepseek,xai,pollinations">
+                                    <div class="range-block-title" data-i18n="Temperature">
+                                        Temperature
                                     </div>
-                                    <div class="toggle-description justifyLeft">
-                                        <span data-i18n="Helps to ban or reenforce the usage of certain words">Place words or phrases you want the bot to stop saying</span>
-                                        <span data-i18n="Confirm token parsing with">Get the [token id] for gpt models </span>
-                                        <a target="_blank" href="https://platform.openai.com/tokenizer/" data-i18n="Tokenizer">here</a>.
+                                    <div class="range-block-range-and-counter">
+                                        <div class="range-block-range">
+                                            <input type="range" id="temp_openai" name="volume" min="0" max="2.0" step="0.01">
                                         </div>
-                                    <div class="openai_logit_bias_preset_form">
-                                        <select id="openai_logit_bias_preset">
-                                        </select>
-                                        <i title="New preset" id="openai_logit_bias_new_preset" class="menu_button fa-solid fa-plus" data-i18n="[title]New preset"></i>
-                                        <i title="Import preset" id="openai_logit_bias_import_preset" class="menu_button fa-solid fa-file-import" data-i18n="[title]Import preset"></i>
-                                        <i title="Export preset" id="openai_logit_bias_export_preset" class="menu_button fa-solid fa-file-export" data-i18n="[title]Export preset"></i>
-                                        <i title="Delete preset" id="openai_logit_bias_delete_preset" class="menu_button fa-solid fa-trash-can" data-i18n="[title]Delete preset"></i>
-                                        <input id="openai_logit_bias_import_file" type="file" accept=".json" hidden />
+                                        <div class="range-block-counter">
+                                            <input type="number" min="0" max="2.0" step="0.01" data-for="temp_openai" id="temp_counter_openai">
                                         </div>
-                                    <div class="inline-drawer wide100p">
-                                        <div class="inline-drawer-toggle inline-drawer-header">
-                                            <b data-i18n="View / Edit bias preset">Click to view</b>
-                                            <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                                     </div>
-                                        <div class="inline-drawer-content">
-                                            <div id="openai_logit_bias_new_entry" class="menu_button wide100p flex-container justifyCenter" data-i18n="Add bias entry">
-                                                Click to add
                                 </div>
-                                            <div class="openai_logit_bias_list" no_items_text="No items" data-i18n="[no_items_text]openai_logit_bias_no_items"></div>
-                                            <div class="m-t-1">
-                                                <small>
-                                                    <i class="fa-solid fa-lightbulb"></i>
-                                                    &nbsp;
-                                                    <span data-i18n="Most tokens have a leading space.">
-                                                        Most tokens have a leading space.
-                                                    </span>
-                                                </small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>                                
-                                <div class="range-block m-b-1">                                  
-                                    <div id="completion_prompt_manager"></div>
-                                </div>                                
-
-                                <div class="range-block" data-source="openai,openrouter,custom,cohere,perplexity,groq,mistralai,nanogpt,deepseek,xai">
+                                <div class="range-block" data-source="openai,aimlapi,openrouter,custom,cohere,perplexity,groq,mistralai,nanogpt,deepseek,xai,pollinations">
                                     <div class="range-block-title" data-i18n="Frequency Penalty">
                                         Frequency Penalty
                                     </div>
@@ -2170,6 +2132,49 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="range-block m-t-1" data-source="openai,aimlapi,openrouter,custom">
+                                    <div id="logit_bias_openai" class="range-block-title openai_restorable" data-i18n="Logit Bias">
+                                        Logit Bias
+                                    </div>
+                                    <div class="toggle-description justifyLeft">
+                                        <span data-i18n="Helps to ban or reenforce the usage of certain words">Helps to ban or reinforce the usage of certain tokens.</span>
+                                        <span data-i18n="Confirm token parsing with">Confirm token parsing with</span>
+                                        <a target="_blank" href="https://platform.openai.com/tokenizer/" data-i18n="Tokenizer">Tokenizer</a>.
+                                    </div>
+                                    <div class="openai_logit_bias_preset_form">
+                                        <select id="openai_logit_bias_preset">
+                                        </select>
+                                        <i title="New preset" id="openai_logit_bias_new_preset" class="menu_button fa-solid fa-plus" data-i18n="[title]New preset"></i>
+                                        <i title="Import preset" id="openai_logit_bias_import_preset" class="menu_button fa-solid fa-file-import" data-i18n="[title]Import preset"></i>
+                                        <i title="Export preset" id="openai_logit_bias_export_preset" class="menu_button fa-solid fa-file-export" data-i18n="[title]Export preset"></i>
+                                        <i title="Delete preset" id="openai_logit_bias_delete_preset" class="menu_button fa-solid fa-trash-can" data-i18n="[title]Delete preset"></i>
+                                        <input id="openai_logit_bias_import_file" type="file" accept=".json" hidden />
+                                    </div>
+                                    <div class="inline-drawer wide100p">
+                                        <div class="inline-drawer-toggle inline-drawer-header">
+                                            <b data-i18n="View / Edit bias preset">View / Edit bias preset</b>
+                                            <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                                        </div>
+                                        <div class="inline-drawer-content">
+                                            <div id="openai_logit_bias_new_entry" class="menu_button wide100p flex-container justifyCenter" data-i18n="Add bias entry">
+                                                Add bias entry
+                                            </div>
+                                            <div class="openai_logit_bias_list" no_items_text="No items" data-i18n="[no_items_text]openai_logit_bias_no_items"></div>
+                                            <div class="m-t-1">
+                                                <small>
+                                                    <i class="fa-solid fa-lightbulb"></i>
+                                                    &nbsp;
+                                                    <span data-i18n="Most tokens have a leading space.">
+                                                        Most tokens have a leading space.
+                                                    </span>
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="range-block m-b-1">
+                                    <div id="completion_prompt_manager"></div>
+                                </div>
                             </div><!-- end of OpenAI settings-->
                         </div>
                     </div>
@@ -2780,7 +2785,7 @@
                         <select id="chat_completion_source">
                             <optgroup>
                                 <option value="openai">OpenAI</option>
-                                <option value="custom" data-i18n="Custom (OpenAI-compatible)">Custom (OpenAI-compatible) - Ehub, Zanity Zuki</option>
+                                <option value="custom" data-i18n="Custom (OpenAI-compatible)">Custom (OpenAI-compatible)</option>
                             </optgroup>
                             <optgroup>
                                 <option value="01ai">01.AI (Yi)</option>
@@ -3681,7 +3686,7 @@
                 </div>
             </div>
         </div>
-        <div style="display:none;" id="advanced-formatting-button" class="drawer">
+        <div id="advanced-formatting-button" class="drawer">
             <div class="drawer-toggle">
                 <div class="drawer-icon fa-solid fa-font fa-fw closedIcon" title="AI Response Formatting" data-i18n="[title]AI Response Formatting"></div>
             </div>
@@ -5515,14 +5520,17 @@
                                                 <div id="favorite_button" class="menu_button fa-solid fa-star" title="Add to Favorites" data-i18n="[title]Add to Favorites"></div>
                                                 <input type="hidden" id="fav_checkbox" name="fav" />
                                                 <div id="advanced_div" class="menu_button fa-solid fa-book " title="Advanced Definitions" data-i18n="[title]Advanced Definition"></div>
+                                                <div id="world_button" class="menu_button fa-solid fa-globe" title="Character Lore&#10;&#10;Click to load&#10;Shift-click to open 'Link to World Info' popup" data-i18n="[title]world_button_title"></div>
                                                 <div class="chat_lorebook_button menu_button fa-solid fa-passport" title="Chat Lore&#10;Alt+Click to open the lorebook" data-i18n="[title]Chat Lore Alt+Click to open the lorebook"></div>
                                                 <div id="char_connections_button" class="menu_button fa-solid fa-face-smile" title="Connected Personas" data-i18n="[title]Connected Personas"></div>
-                                                <div id="delete_button" class="menu_button fa-solid fa-skull red_button interactable" title="Delete Character" data-i18n="[title]Delete Character" tabindex="0" style="display: flex;"></div>
+                                                <div id="export_button" class="menu_button fa-solid fa-file-export " title="Export and Download" data-i18n="[title]Export and Download"></div>
                                                 <!-- <div id="set_chat_scenario" class="menu_button fa-solid fa-scroll" title="Set a chat scenario override"></div> -->
                                                 <!-- <div id="set_character_world" class="menu_button fa-solid fa-globe" title="Set a character World Info / Lorebook"></div> -->
+                                                <div id="dupe_button" class="menu_button fa-solid fa-clone " title="Duplicate Character" data-i18n="[title]Duplicate Character"></div>
                                                 <label for="create_button" id="create_button_label" class="menu_button fa-solid fa-user-check" title="Create Character" data-i18n="[title]Create Character">
                                                     <input type="submit" id="create_button" name="create_button">
                                                 </label>
+                                                <div id="delete_button" class="menu_button fa-solid fa-skull red_button" title="Delete Character" data-i18n="[title]Delete Character"></div>
                                             </div>
                                             <label class="flex1 height100p" for="char-management-dropdown">
                                                 <select id="char-management-dropdown" class="text_pole">
@@ -5538,6 +5546,15 @@
                                                     </option>
                                                     <option id="convert_to_persona" data-i18n="Convert to Persona">
                                                         Convert to Persona
+                                                    </option>
+                                                    <option id="renameCharButton" data-i18n="Rename">
+                                                        Rename
+                                                    </option>
+                                                    <option id="character_source" data-i18n="Link to Source">
+                                                        Link to Source
+                                                    </option>
+                                                    <option id="replace_update" data-i18n="Replace / Update">
+                                                        Replace / Update
                                                     </option>
                                                     <option id="import_tags" data-i18n="Import Tags">
                                                         Import Tags
@@ -5567,17 +5584,25 @@
                                     </div>
                                 </div>
                             </div>
-                        <hr>
-                        <div id="spoiler_free_desc" class="flex-container flexFlowColumn flex1 flexNoGap">
-                            <div id="creators_notes_div" class="title_restorable flexGap5">
+                            <div id="spoiler_free_desc" class="inline-drawer flex-container flexFlowColumn flexNoGap">
+                                <div class="inline-drawer-toggle inline-drawer-header padding0 gap5px standoutHeader">
+                                    <div id="creators_notes_div" class="title_restorable flexGap5 wide100p ">
                                         <span class="flex1" data-i18n="Creator's Notes">Creator's Notes</span>
-                                <small id="creators_note_desc_hidden" data-i18n="Character details are hidden.">Character details are hidden.</small>
                                         <div id="creators_note_styles_button" class="margin0 menu_button fa-solid fa-palette fa-fw" title="Allow / Forbid the use of global styles for this character." data-i18n="[title]Allow / Forbid the use of global styles for this character."></div>
                                         <div id="spoiler_free_desc_button" class="margin0 menu_button fa-solid fa-eye fa-fw" title="Show / Hide Description and First Message" data-i18n="[title]Show / Hide Description and First Message"></div>
                                     </div>
-                            <div id="creator_notes_spoiler" class="flex1"></div>
-                            <!-- A button to show / hide description_div and description_textarea and first_message_div and firstmessage_textarea-->
+                                    <div class="flex-container widthFitContent">
+                                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable"></div>
                                     </div>
+                                </div>
+                                <div class="inline-drawer-content">
+                                    <div id="creator_notes_spoiler"></div>
+                                    <div id="creator_notes_empty" data-i18n="No Creator's Notes provided.">
+                                        No Creator's Notes provided.
+                                    </div>
+                                </div>
+                            </div>
+                            <small id="creators_note_desc_hidden" data-i18n="Character details are hidden.">Character details are hidden.</small>
                             <div id="descriptionWrapper" class="flex-container flexFlowColumn flex1">
                                 <div id="description_div" class="title_restorable">
                                     <div class="flex-container alignitemscenter">
@@ -5990,7 +6015,7 @@
                 </div>
             </div>
             <hr>
-            <div style="display:none" id="personality_div">
+            <div id="personality_div">
                 <h4 class="flex-container alignItemsBaseline">
                     <span data-i18n="Personality summary">Personality summary</span>
                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="personality_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
@@ -6001,7 +6026,7 @@
                     <span data-i18n="extension_token_counter">Tokens:</span> <span data-token-counter="personality_textarea" data-token-permanent="true">counting...</span>
                 </div>
             </div>
-            <div style="display:none" id="scenario_div">
+            <div id="scenario_div">
                 <h4 class="flex-container alignItemsBaseline">
                     <span data-i18n="Scenario">Scenario</span>
                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="scenario_pole" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
@@ -6014,7 +6039,7 @@
                     <span data-i18n="extension_token_counter">Tokens:</span> <span data-token-counter="scenario_pole" data-token-permanent="true">counting...</span>
                 </div>
             </div>
-            <div style="display:none" id="depth_prompt_div" class="flex-container">
+            <div id="depth_prompt_div" class="flex-container">
                 <div class="flex1">
                     <h4 class="flex-container alignItemsBaseline">
                         <span data-i18n="Character's Note">
@@ -6046,7 +6071,7 @@
                     </div>
                 </div>
             </div>
-            <div style="display:none" id="talkativeness_div">
+            <div id="talkativeness_div">
                 <h4><span data-i18n="Talkativeness">Talkativeness</span></h4>
                 <h5 data-i18n="How often the character speaks in group chats!"><!-- This data-i18n attribute on the left is kept for backward compatibility, use the ones below when translating -->
                     <span data-i18n="How often the character speaks in">How often the character speaks in</span>&nbsp;<span class="warning" data-i18n="group chats!">group chats!</span>
@@ -6059,7 +6084,7 @@
                 </div>
             </div>
             <hr>
-            <div style="display:none" id="mes_example_div" class="flex-container flexFlowColumn">
+            <div id="mes_example_div" class="flex-container flexFlowColumn">
                 <div>
                     <h4 class="flex-container alignItemsBaseline">
                         <span data-i18n="Examples of dialogue" class="mdhotkey_location">Examples of dialogue</span>
@@ -6207,7 +6232,7 @@
                                 </span>
                             </small>
                             <small class="textAlignCenter" data-i18n="Primary Keywords">Primary Keywords</small>
-                                        <select class="keyprimaryselect keyselect select2_multi_sameline" name="key" data-i18n="[placeholder]Keywords or Regexes" placeholder="Keywords or Regexes" multiple="multiple"></select>
+                            <select class="keyprimaryselect keyselect" name="key" data-i18n="[placeholder]Keywords or Regexes" placeholder="Keywords or Regexes" multiple="multiple"></select>
                             <textarea class="text_pole keyprimarytextpole mobile" name="key" rows="1" data-i18n="[placeholder]Comma separated list" placeholder="Comma separated list" style="display: none;"></textarea>
                             <button type="button" class="switch_input_type_icon" tabindex="-1" title="Switch to plaintext mode" data-i18n="[title]Switch to plaintext mode" data-icon-on="✨" data-icon-off="⌨️" data-tooltip-on="Switch to fancy mode" data-tooltip-off="Switch to plaintext mode">
                                 ⌨️
@@ -6229,7 +6254,7 @@
                                 </span>
                             </small>
                             <small class="textAlignCenter" data-i18n="Optional Filter">Optional Filter</small>
-                                        <select class="keysecondaryselect keyselect select2_multi_sameline" name="keysecondary" data-i18n="[placeholder]Keywords or Regexes (ignored if empty)" placeholder="Keywords or Regexes (ignored if empty)" multiple="multiple"></select>
+                            <select class="keysecondaryselect keyselect" name="keysecondary" data-i18n="[placeholder]Keywords or Regexes (ignored if empty)" placeholder="Keywords or Regexes (ignored if empty)" multiple="multiple"></select>
                             <textarea class="text_pole keysecondarytextpole mobile" name="keysecondary" rows="1" data-i18n="[placeholder]Comma separated list (ignored if empty)" placeholder="Comma separated list (ignored if empty)" style="display: none;"></textarea>
                             <button type="button" class="switch_input_type_icon" tabindex="-1" title="Switch to plaintext mode" data-i18n="[title]Switch to plaintext mode" data-icon-on="✨" data-icon-off="⌨️" data-tooltip-on="Switch to fancy mode" data-tooltip-off="Switch to plaintext mode">
                                 ⌨️
@@ -6581,6 +6606,7 @@
                                     </div>
                                 </div>
                             </div>
+                            <i class="menu_button move_entry_button fa-solid fa-right-left" title="Move Entry to Another Lorebook" data-i18n="[title]Move Entry to Another Lorebook"></i>
                             <i class="menu_button duplicate_entry_button fa-solid fa-paste" title="Duplicate world info entry" data-i18n="[title]Duplicate world info entry" type="submit" value=""></i>
                             <i class="menu_button delete_entry_button fa-solid fa-trash-can" title="Delete world info entry" data-i18n="[title]Delete world info entry" type="submit" value=""></i>
                         </div>
