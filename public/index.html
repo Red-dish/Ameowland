@@ -617,13 +617,6 @@
                                 </div>
                             </div>
                             <div id="range_block_openai">
-                                <div class="range-block">
-                                    <label class="checkbox_label">
-                                        <span data-i18n="Unlocked Context Size">
-                                            Please do not play with any of the settings under this text unless you know what you are doing
-                                        </span>
-                                    </label>
-                                </div>
                                 <div class="range-block" data-source="openai,claude,windowai,openrouter,ai21,scale,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,01ai,nanogpt,deepseek,xai">
                                         <div class="range-block-title" data-i18n="Temperature">
                                             Temperature
@@ -639,7 +632,7 @@
                                 </div>                                  
                                 <div class="range-block">
                                     <div class="range-block-title" data-i18n="Context Size (tokens)">
-                                        Context Size (tokens)
+                                        Context Size (at least 128k tokens)
                                     </div>
                                     <div class="range-block-range-and-counter">
                                         <div class="range-block-range">
@@ -697,6 +690,31 @@
                                         </span>
                                     </div>
                                 </div>
+                                <div class="range-block" data-source="openai,aimlapi,openrouter,mistralai,makersuite,vertexai,claude,custom,01ai,xai,pollinations">
+                                    <label for="openai_image_inlining" class="checkbox_label flexWrap widthFreeExpand">
+                                        <input id="openai_image_inlining" type="checkbox" />
+                                        <span data-i18n="Send inline images">Allow AI to read and send images</span></span>
+                                    </label>
+                                    <div id="image_inlining_hint" class="flexBasis100p toggle-description justifyLeft">
+                                        <span data-i18n="image_inlining_hint_1">Sends images in prompts if the model supports it. Use the</span>
+                                        <code><i class="fa-solid fa-paperclip"></i></code>
+                                        <span data-i18n="image_inlining_hint_2">action on any message or the</span>
+                                        <code><i class="fa-solid fa-wand-magic-sparkles"></i></code>
+                                        <span data-i18n="image_inlining_hint_3">menu to attach an image file to the chat.</span>
+                                    </div>
+                                    <div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,xai,pollinations">
+                                        <div class="flex-container oneline-dropdown">
+                                            <label for="openai_inline_image_quality" data-i18n="Inline Image Quality">
+                                                Inline Image Quality
+                                            </label>
+                                            <select id="openai_inline_image_quality">
+                                                <option data-i18n="openai_inline_image_quality_auto" value="auto">Auto</option>
+                                                <option data-i18n="openai_inline_image_quality_low" value="low">Low</option>
+                                                <option data-i18n="openai_inline_image_quality_high" value="high">High</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="range-block m-t-1" data-source="openai,aimlapi,openrouter,scale,custom">
                                     <div id="logit_bias_openai" class="range-block-title openai_restorable" data-i18n="Logit Bias">
                                         Anti-Repetition Settings
@@ -736,6 +754,13 @@
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                                <div class="range-block">
+                                    <label class="checkbox_label">
+                                        <span data-i18n="Unlocked Context Size">
+                                            Please do not play with any of the settings under this text unless you know what you are doing
+                                        </span>
+                                    </label>
                                 </div>                                
                                 <div class="range-block m-b-1">                                  
                                     <div id="completion_prompt_manager"></div>
@@ -2030,31 +2055,6 @@
                                             <span data-i18n="enable_functions_desc_1">Allows using </span><a href="https://platform.openai.com/docs/guides/function-calling" target="_blank" data-i18n="enable_functions_desc_2">function tools</a>.
                                             <span data-i18n="enable_functions_desc_3">Can be utilized by various extensions to provide additional functionality.</span>
                                             <strong data-i18n="enable_functions_desc_4">Not supported when Prompt Post-Processing with "no tools" is used!</strong>
-                                        </div>
-                                    </div>
-                                    <div class="range-block" data-source="openai,aimlapi,openrouter,mistralai,makersuite,vertexai,claude,custom,01ai,xai,pollinations">
-                                        <label for="openai_image_inlining" class="checkbox_label flexWrap widthFreeExpand">
-                                            <input id="openai_image_inlining" type="checkbox" />
-                                            <span data-i18n="Send inline images">Send inline images</span>
-                                        </label>
-                                        <div id="image_inlining_hint" class="flexBasis100p toggle-description justifyLeft">
-                                            <span data-i18n="image_inlining_hint_1">Sends images in prompts if the model supports it. Use the</span>
-                                            <code><i class="fa-solid fa-paperclip"></i></code>
-                                            <span data-i18n="image_inlining_hint_2">action on any message or the</span>
-                                            <code><i class="fa-solid fa-wand-magic-sparkles"></i></code>
-                                            <span data-i18n="image_inlining_hint_3">menu to attach an image file to the chat.</span>
-                                        </div>
-                                        <div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,xai,pollinations">
-                                            <div class="flex-container oneline-dropdown">
-                                                <label for="openai_inline_image_quality" data-i18n="Inline Image Quality">
-                                                    Inline Image Quality
-                                                </label>
-                                                <select id="openai_inline_image_quality">
-                                                    <option data-i18n="openai_inline_image_quality_auto" value="auto">Auto</option>
-                                                    <option data-i18n="openai_inline_image_quality_low" value="low">Low</option>
-                                                    <option data-i18n="openai_inline_image_quality_high" value="high">High</option>
-                                                </select>
-                                            </div>
                                         </div>
                                     </div>
                                     <div class="range-block" data-source="makersuite,vertexai">
@@ -5569,8 +5569,8 @@
                         <hr>
                         <div id="spoiler_free_desc" class="flex-container flexFlowColumn flex1 flexNoGap">
                             <div id="creators_notes_div" class="title_restorable flexGap5">
-                                <span class="flex1" data-i18n="Creator's Notes">Creator's Notes</span>
-                                <small id="creators_note_desc_hidden" data-i18n="Character details are hidden.">Character details are hidden.</small>
+                                <span class="flex1" data-i18n="Creator's Notes">Character Introduction</span>
+                                <!--<small id="creators_note_desc_hidden" data-i18n="Character details are hidden.">Character details are hidden.</small>-->
                                 <div id="creators_note_styles_button" class="margin0 menu_button fa-solid fa-palette fa-fw" title="Allow / Forbid the use of global styles for this character." data-i18n="[title]Allow / Forbid the use of global styles for this character."></div>
                                 <div id="spoiler_free_desc_button" class="margin0 menu_button fa-solid fa-eye fa-fw" title="Show / Hide Description and First Message" data-i18n="[title]Show / Hide Description and First Message"></div>
                             </div>
@@ -5581,7 +5581,7 @@
                             <hr>
                             <div id="description_div" class="title_restorable">
                                 <div class="flex-container alignitemscenter">
-                                        <span data-i18n="Character Description" class="mdhotkey_location">Description</span>
+                                        <span data-i18n="Character Description" class="mdhotkey_location">⚠️STOP DO NOT EDIT THIS AREA AT ANY COST !!!⚠️</span>
                                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="description_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                     <a href="https://docs.sillytavern.app/usage/core-concepts/characterdesign/#character-description" class="notes-link" target="_blank">
                                         <span class="fa-solid fa-circle-question note-link-span"></span>

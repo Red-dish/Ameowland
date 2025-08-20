@@ -347,6 +347,16 @@ input[type='checkbox']:focus-visible {
     overflow: hidden;
 }
 
+#spoiler_free_desc_button{
+    margin-right: 1em;
+    opacity: 0.05;
+    transition: 200ms;
+            &:hover {
+        opacity: 1;
+        filter: saturate(1.0);
+        }
+}
+
 .fa-solid::before,
 .fa-regular::before {
     vertical-align: middle;
@@ -4246,6 +4256,14 @@ input[type='checkbox'].del_checkbox {
     flex: 1;
     gap: 5px;
     display: flex;
+}
+
+.range-block label.checkbox_label span[data-i18n="Unlocked Context Size"] {
+    margin-bottom: 10px; 
+    display: block; /* block element to control margin/padding better */
+    font-size: 0.9em;
+    color: #9c96fa;
+    padding: 5px; 
 }
 
 .toggle-description {
