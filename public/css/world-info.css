@@ -169,6 +169,7 @@
 } */
 
 #world_editor_select {
+    margin: auto;
     text-overflow: ellipsis;
     white-space: nowrap;
     width: 10em;
@@ -286,16 +287,141 @@ select.keyselect+span.select2-container .select2-selection--multiple {
     display: none;
 }
 
-.world_entry label[for="__invisible"] {
-    visibility: hidden;
-    pointer-events: none;
-    opacity: 0;
-    width: 0;
-    overflow: hidden;
+/* ======================== WORLD INFO PRESETS STYLES ======================== */
+
+#WorldInfo .wi-presets-container  {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    gap: 1em;
+    align-items: baseline;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    background-color: var(--SmartThemeBlurTintColor);
+	filter: saturate(0.5);
+	margin-right: 1em;
+	opacity: 0.25;
+	transition: 200ms;
+        	&:hover {
+		opacity: 1;
+		filter: saturate(1.0);
+	}
+
 }
 
-#WIMultiSelector .select2-container .select2-selection--multiple {
-    max-height: 25vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+#WorldInfo .wi-presets-container .wi-presets-select {
+    width: 100%;
+    /* margin-bottom: 10px; */
+    color: var(--SmartThemeBodyColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    /* padding: 8px; */
 }
+
+#WorldInfo .wi-presets-actions {
+		display: flex;
+		flex-direction: row;
+		gap: 0.25em;
+}
+
+#WorldInfo .wi-presets-container .wi-presets-actions .wi-presets-action.menu_button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color var(--animation-duration-fast);
+    border: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    filter: grayscale(0.5);
+}
+
+#WorldInfo .wi-presets-container .wi-presets-actions .wi-presets-action.menu_button:not(.disabled):hover {
+    background-color: var(--white30a);
+    filter: grayscale(0);
+}
+
+#WorldInfo .wi-presets-container .wi-presets-actions .wi-presets-action.menu_button.redWarningBG {
+    background-color: var(--crimson70a);
+    border-color: var(--fullred);
+}
+
+#WorldInfo .wi-presets-container .wi-presets-actions .wi-presets-action.menu_button.redWarningBG:hover {
+    background-color: var(--crimson-hover);
+}
+
+#WorldInfo .wi-presets-container .wi-presets-import-file {
+    display: none;
+}
+
+/* ======================== WORLD INFO TRANSFER STYLES ======================== */
+
+#world_popup_entries_list .world_entry .wi-transfer-btn.menu_button {
+    margin-right: 5px;
+    cursor: pointer;
+    color: var(--SmartThemeBodyColor);
+    filter: grayscale(0.5);
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    transition: background-color var(--animation-duration-fast);
+}
+
+#world_popup_entries_list .world_entry .wi-transfer-btn.menu_button:not(.disabled):hover {
+    background-color: var(--white30a);
+    filter: grayscale(0);
+}
+
+.wi-transfer-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 300px;
+    color: var(--SmartThemeBodyColor);
+}
+
+.wi-transfer-modal h3 {
+    margin-top: 0;
+    text-align: center;
+    color: var(--SmartThemeBodyColor);
+}
+
+.wi-transfer-modal h4 {
+    margin: 0;
+    font-size: 0.9em;
+    color: var(--grey70);
+    text-align: center;
+}
+
+.wi-transfer-modal .wi-world-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    background-color: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+}
+
+.wi-transfer-modal p {
+    margin: 5px 0;
+    text-align: center;
+    color: var(--SmartThemeBodyColor);
+}
+
+.wi-transfer-modal small {
+    color: var(--grey70);
+    font-style: italic;
+}
+
+/* Ensure transfer button is processed only once */
+#world_popup_entries_list .world_entry.wi-transfer-processed .wi-transfer-btn {
+    /* Additional styling if needed */
+}
+
+/* ======================== END WORLD INFO STYLES ======================== */

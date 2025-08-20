@@ -2604,11 +2604,7 @@ textarea::placeholder {
 #creator_notes_spoiler {
     border: 0;
     font-size: calc(var(--mainFontSize)*.8);
-    padding: 5px 0;
-}
-
-#creator_notes_spoiler p:last-child {
-    margin-bottom: 0;
+    padding-top: 5px;
 }
 
 @media screen and (max-width: 1000px) {
@@ -5498,7 +5494,7 @@ transition: 200ms;
         &:hover {
     opacity: 1;
     filter: saturate(1.0);
-}
+    }
 }
 
 
