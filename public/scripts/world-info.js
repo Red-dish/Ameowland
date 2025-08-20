@@ -26,7 +26,11 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "hailey": ["bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes"],
+    "hailey": [
+        "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
+        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
+        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran"
+    ],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu"],
     "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami"],
@@ -35,6 +39,7 @@ const botmakersMap = {
     "zelle":["bb-zelle-testing","bb-zelle-zayneli"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"]
 };
+
 
 /**
 *Checks if the current user is an admin*
