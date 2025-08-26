@@ -17,109 +17,11 @@ import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '
 import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandEnumValue.js';
 import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCommonEnumsProvider.js';
 import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
-import { callGenericPopup, Popup, POPUP_TYPE } from './popup.js';
+import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { isAdmin, getCurrentUserHandle } from './user.js';
-
-
-const botmakersMap = {
-    "hailey": [
-        "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
-        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
-        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran"
-    ],
-    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami"],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander"],
-    "dreamweaver":["bb-dreamweaver-Venryk"],
-    "zelle":["bb-zelle-testing","bb-zelle-zayneli"],
-    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"]
-};
-
-
-/**
-*Checks if the current user is an admin*
-*@returns {boolean} Whether the current user is an admin*
-*/
-function isCurrentUserAdmin() {
-    try {
-        // Use the existing isAdmin function if available
-        if (typeof isAdmin === 'function') {
-            return isAdmin();
-        }
-
-        // Fallback to checking specific admin usernames
-        const userHandle = getCurrentUserHandle();
-        return ['admin', 'default-user'].includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking admin status:', error);
-        return false;
-    }
-}
-
-/**
- *Checks if the current user is a botmaker*
-* @returns {boolean} Whether the current user is a botmaker*
- */
-function isCurrentUserBotmaker() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return Object.keys(botmakersMap).includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking botmaker status:', error);
-        return false;
-    }
-}
-
-/**
-* Gets the list of loreBooks the current user has access to if they're a botmaker*
- *@returns {string[]} Array of loreBook names the user has access to*
-*/
-function getBotmakerAllowedLoreBooks() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return botmakersMap[userHandle] || [];
-    } catch (error) {
-        console.error('[WI] Error getting allowed loreBooks:', error);
-        return [];
-    }
-}
-
-/**
-*Checks if a user has access to view a specific loreBook*
-*@param {string} lorebookName - Name of the loreBook to check access for*
-*@returns {boolean} Whether the user has access to the loreBook*
-*/
-function hasLoreBookAccess(lorebookName) {
-    // Admins have access to everything
-    if (isCurrentUserAdmin()) {
-        return true;
-    }
-
-    // Assume personal loreBooks are prefixed with "bb-username-"
-    const userHandle = getCurrentUserHandle();
-    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
-        return true; // User's personal loreBook
-    }
-
-    // Check if it's a global loreBook (no special prefix)
-    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
-        return true; // Global loreBook accessible to all
-    }
-
-    // For botmakers, check if they have access to this specific loreBook
-    if (isCurrentUserBotmaker()) {
-        const allowedBooks = getBotmakerAllowedLoreBooks();
-        return allowedBooks.includes(lorebookName);
-    }
-
-    // By default, deny access
-    return false;
-}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -967,75 +869,6 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanD
     };
 }
 
-/**
-*Filters world names based on user permissions*
-*@param {object} data - The data containing world names*
-*@returns {string[]} Filtered list of world names*
-*/
-function filterWorldNames(data) {
-    let world_names = data.world_names?.length ? data.world_names : [];
-    console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
-
-    if (Array.isArray(world_names)) {
-        try {
-            const currentUserHandle = getCurrentUserHandle();
-            const isUserAdmin = isCurrentUserAdmin();
-            const isUserBotmaker = isCurrentUserBotmaker();
-            console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
-
-            // Exempt admins from filtering
-            if (isUserAdmin) {
-                console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
-                // No filtering needed - return all world names
-                return world_names;
-            } else {
-                console.log('[WorldInfo] Applying filters for user', currentUserHandle);
-
-                // First layer: Filter out #hidden# files for non-admins
-                let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
-                console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
-
-                // Second layer: Apply user handle pattern matching
-                world_names = filteredNames.filter(name => {
-                    // Personal loreBooks: match username prefix
-                    if (name.startsWith(`bb-${currentUserHandle}-`)) {
-                        return true;
-                    }
-
-                    // Global loreBooks: available to everyone
-                    if (!name.startsWith('bb-')) {
-                        return true;
-                    }
-
-                    // Botmaker loreBooks: check permissions
-                    if (isUserBotmaker) {
-                        const allowedBooks = getBotmakerAllowedLoreBooks();
-                        return allowedBooks.includes(name);
-                    }
-
-                    // User-specific loreBooks: deny access
-                    if (name.match(/^\$\$-(\w+)/)) {
-                        console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
-                        return false;
-                    }
-
-                    return false;
-                });
-
-                console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
-                return world_names;
-            }
-        } catch (error) {
-            console.error('[WorldInfo] Error during world filtering:', error);
-            // In case of error, keep original world_names
-            return world_names;
-        }
-    }
-
-    return world_names;
-}
-
-
 export function setWorldInfoSettings(settings, data) {
     if (settings.world_info_depth !== undefined)
         world_info_depth = Number(settings.world_info_depth);
@@ -1113,74 +946,8 @@ export function setWorldInfoSettings(settings, data) {
 
     $('#world_info_max_recursion_steps').val(world_info_max_recursion_steps);
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
-    
 
     world_names = data.world_names?.length ? data.world_names : [];
-
-
-        if (typeof getCurrentUserHandle !== 'function') {
-            function getCurrentUserHandle() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Try to get from localStorage or sessionStorage
-                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
-                        if (userID) return userID;
-                        
-                        // Check if it's available from other ST modules
-                        if (window.userSettings && window.userSettings.name) {
-                            return window.userSettings.name;
-                        }
-                    }
-                    
-                    // If running in Node.js side of SillyTavern
-                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
-                        return process.env.CURRENT_USER;
-                    }
-                    
-                    return 'anonymous';
-                } catch (error) {
-                    console.error('[WorldInfo] Error getting user handle:', error);
-                    return 'anonymous';
-                }
-            }
-            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
-        }
-
-// Function to check if user is admin - only define if it doesn't exist
-        if (typeof isAdmin !== 'function') {
-            function isAdmin() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Check if it's available from other ST modules
-                        if (typeof window.isUserAdmin === 'function') {
-                            return window.isUserAdmin();
-                        }
-                        
-                        // Fallback to checking specific admin users
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    // If running in Node.js side
-                    if (typeof process !== 'undefined') {
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    return false;
-                } catch (error) {
-                    console.error('[WorldInfo] Error checking admin status:', error);
-                    return false;
-                }
-            }
-            console.log('[WorldInfo] Defined fallback isAdmin function');
-        }
-        // Call the function with the data and assign the result back
-        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -1559,18 +1326,18 @@ function registerWorldInfoSlashCommands() {
                 setWIOriginalDataValue(data, uid, 'character_filter', entry.characterFilter);
                 break;
             default:
-        if (Array.isArray(entry[field])) {
+                if (Array.isArray(entry[field])) {
                     entry[field] = parseStringArray(value).filter(arrayFilter);
-        } else if (typeof entry[field] === 'boolean') {
-            entry[field] = isTrueBoolean(value);
-        } else if (typeof entry[field] === 'number') {
-            entry[field] = Number(value);
-        } else {
-            entry[field] = value;
-        }
+                } else if (typeof entry[field] === 'boolean') {
+                    entry[field] = isTrueBoolean(value);
+                } else if (typeof entry[field] === 'number') {
+                    entry[field] = Number(value);
+                } else {
+                    entry[field] = value;
+                }
 
-        if (originalWIDataKeyMap[field]) {
-            setWIOriginalDataValue(data, uid, originalWIDataKeyMap[field], entry[field]);
+                if (originalWIDataKeyMap[field]) {
+                    setWIOriginalDataValue(data, uid, originalWIDataKeyMap[field], entry[field]);
                 }
         }
 
@@ -2149,14 +1916,19 @@ export async function updateWorldInfoList() {
     });
 
     if (result.ok) {
-        var data = await result.json();
-        world_names = filterWorldNames(data);
+        const data = await result.json();
+        const editorSelected = String($('#world_editor_select').find(':selected').text());
+        world_names = data.world_names?.length ? data.world_names : [];
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
         world_names.forEach((item, i) => {
-            $('#world_info').append(`<option value='${i}'${selected_world_info.includes(item) ? ' selected' : ''}>${item}</option>`);
-            $('#world_editor_select').append(`<option value='${i}'>${item}</option>`);
+            const globalListOption = new Option(item, i.toString());
+            globalListOption.selected = selected_world_info.includes(item);
+            const editorListOption = new Option(item, i.toString());
+            editorListOption.selected = editorSelected === item;
+            $('#world_info').append(globalListOption);
+            $('#world_editor_select').append(editorListOption);
         });
     }
 }
@@ -2322,6 +2094,7 @@ function updateWorldEntryKeyOptionsCache(keyOptions, { remove = false, reset = f
     // Sort by count DESC and then alphabetically
     worldEntryKeyOptionsCache.sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
 }
+
 function clearEntryList($list) {
     console.time('clearEntryList');
 
@@ -2383,33 +2156,14 @@ function clearEntryList($list) {
 
     console.timeEnd('clearEntryList');
 }
+
+//MARK: displayWorldEntries
 async function displayWorldEntries(name, data, navigation = navigation_option.none, flashOnNav = true) {
-    updateEditor = (navigation, flashOnNav = true) => displayWorldEntries(name, data, navigation, flashOnNav);
+    updateEditor = async (navigation, flashOnNav = true) => await displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
-
-    const hasEditPermission = isCurrentUserAdmin() ||
-                              !name.startsWith('bb-') ||
-                              name.startsWith(`bb-${getCurrentUserHandle()}-`) ||
-                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
-
-    if (!hasEditPermission) {
-        // Make all inputs and controls read-only
-        worldEntriesList.find('input, textarea, select').prop('disabled', true);
-        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
-        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
-
-        // Add a notice
-        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
-    }
-
-
-    // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
-    // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
     clearEntryList(worldEntriesList);
-    worldEntriesList.find('*').off();
-    worldEntriesList.empty().show();
-    
+    worldEntriesList.show();
 
     if (!data || !('entries' in data)) {
         $('#world_popup_new').off('click').on('click', nullWorldInfo);
@@ -2509,7 +2263,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
             try {
                 clearEntryList(worldEntriesList);
 
-            const keywordHeaders = await renderTemplateAsync('worldInfoKeywordHeaders');
+                const keywordHeaders = await renderTemplateAsync('worldInfoKeywordHeaders');
                 const blocks = [];
 
                 for (const entry of page) {
@@ -2523,15 +2277,15 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     }
                 }
 
-            const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
-            if (!isCustomOrder) {
-                blocks.forEach(block => {
-                    block.find('.drag-handle').remove();
-                });
-            }
+                const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
+                if (!isCustomOrder) {
+                    blocks.forEach(block => {
+                        block.find('.drag-handle').remove();
+                    });
+                }
 
-            worldEntriesList.append(keywordHeaders);
-            worldEntriesList.append(blocks);
+                worldEntriesList.append(keywordHeaders);
+                worldEntriesList.append(blocks);
             } catch (error) {
                 console.error('Error while rendering WI entries:', error);
             }
@@ -2732,6 +2486,7 @@ export const originalWIDataKeyMap = {
     'cooldown': 'extensions.cooldown',
     'delay': 'extensions.delay',
     'triggers': 'extensions.triggers',
+    'ignoreBudget': 'extensions.ignore_budget',
 };
 
 /** Checks the state of the current search, and adds/removes the search sorting option accordingly */
@@ -2947,40 +2702,40 @@ export function parseRegexFromString(input) {
  * @param {object} params.data - The data object containing entries.
  */
 function enableKeysInputHelper({ template, entry, entryPropName, originalDataValueName, name, data }) {
-        const isFancyInput = !isMobile() && !power_user.wi_key_input_plaintext;
-        const input = isFancyInput ? template.find(`select[name="${entryPropName}"]`) : template.find(`textarea[name="${entryPropName}"]`);
-        input.data('uid', entry.uid);
-        input.on('click', function (event) {
-            event.stopPropagation();
-        });
+    const isFancyInput = !isMobile() && !power_user.wi_key_input_plaintext;
+    const input = isFancyInput ? template.find(`select[name="${entryPropName}"]`) : template.find(`textarea[name="${entryPropName}"]`);
+    input.data('uid', entry.uid);
+    input.on('click', function (event) {
+        event.stopPropagation();
+    });
 
     function templateStyling(item, { searchStyle = false } = {}) {
-            const content = $('<span>').addClass('item').text(item.text).attr('title', `${item.text}\n\nClick to edit`);
-            const isRegex = isValidRegex(item.text);
-            if (isRegex) {
-                content.html(highlightRegex(item.text));
-                content.addClass('regex_item').prepend($('<span>').addClass('regex_icon').text('•*').attr('title', 'Regex'));
-            }
-            if (searchStyle && item.count) {
-            const wrapper = $('<span>').addClass('result_block').append(content);
-                wrapper.append($('<span>').addClass('item_count').text(item.count).attr('title', `Used as a key ${item.count} ${item.count != 1 ? 'times' : 'time'} in this lorebook`));
-                return wrapper;
-            }
-            return content;
+        const content = $('<span>').addClass('item').text(item.text).attr('title', `${item.text}\n\nClick to edit`);
+        const isRegex = isValidRegex(item.text);
+        if (isRegex) {
+            content.html(highlightRegex(item.text));
+            content.addClass('regex_item').prepend($('<span>').addClass('regex_icon').text('•*').attr('title', 'Regex'));
         }
+        if (searchStyle && item.count) {
+            const wrapper = $('<span>').addClass('result_block').append(content);
+            wrapper.append($('<span>').addClass('item_count').text(item.count).attr('title', `Used as a key ${item.count} ${item.count != 1 ? 'times' : 'time'} in this lorebook`));
+            return wrapper;
+        }
+        return content;
+    }
 
-        if (isFancyInput) {
-            select2ModifyOptions(input, entry[entryPropName], { select: true, changeEventArgs: { skipReset: true, noSave: true } });
-            input.select2({
-                ajax: dynamicSelect2DataViaAjax(() => worldEntryKeyOptionsCache),
-                tags: true,
-                tokenSeparators: [','],
+    if (isFancyInput) {
+        select2ModifyOptions(input, entry[entryPropName], { select: true, changeEventArgs: { skipReset: true, noSave: true } });
+        input.select2({
+            ajax: dynamicSelect2DataViaAjax(() => worldEntryKeyOptionsCache),
+            tags: true,
+            tokenSeparators: [','],
             // @ts-ignore
-                tokenizer: customTokenizer,
-                placeholder: input.attr('placeholder'),
-                templateResult: item => templateStyling(item, { searchStyle: true }),
-                templateSelection: item => templateStyling(item),
-            });
+            tokenizer: customTokenizer,
+            placeholder: input.attr('placeholder'),
+            templateResult: item => templateStyling(item, { searchStyle: true }),
+            templateSelection: item => templateStyling(item),
+        });
 
         // TypeScript-safe event handler
         /**
@@ -2988,57 +2743,57 @@ function enableKeysInputHelper({ template, entry, entryPropName, originalDataVal
          * @param {{ skipReset?: boolean, noSave?: boolean }} [arg]
          */
         input.on('change', async function (_event, arg) {
-                const uid = $(this).data('uid');
-                const keys = ($(this).select2('data')).map(x => x.text);
+            const uid = $(this).data('uid');
+            const keys = ($(this).select2('data')).map(x => x.text);
             const skipReset = arg?.skipReset ?? false;
             const noSave = arg?.noSave ?? false;
             if (!skipReset) await resetScrollHeight(this);
-                if (!noSave) {
-                    data.entries[uid][entryPropName] = keys;
-                    setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
-                    await saveWorldInfo(name, data);
-                }
-                $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
-            });
+            if (!noSave) {
+                data.entries[uid][entryPropName] = keys;
+                setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
+                await saveWorldInfo(name, data);
+            }
+            $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
+        });
 
-            input.toggleClass('empty', !entry[entryPropName].length);
+        input.toggleClass('empty', !entry[entryPropName].length);
         input.on('select2:select', event => updateWorldEntryKeyOptionsCache([event.params.data]));
         input.on('select2:unselect', event => updateWorldEntryKeyOptionsCache([event.params.data], { remove: true }));
 
-            select2ChoiceClickSubscribe(input, target => {
-                const key = $(target.closest('.regex-highlight, .item')).text();
-                const selected = input.val();
-                if (!Array.isArray(selected)) return;
-                var index = selected.indexOf(getSelect2OptionId(key));
-                if (index > -1) selected.splice(index, 1);
-                input.val(selected).trigger('change');
-                updateWorldEntryKeyOptionsCache([key], { remove: true });
+        select2ChoiceClickSubscribe(input, target => {
+            const key = $(target.closest('.regex-highlight, .item')).text();
+            const selected = input.val();
+            if (!Array.isArray(selected)) return;
+            var index = selected.indexOf(getSelect2OptionId(key));
+            if (index > -1) selected.splice(index, 1);
+            input.val(selected).trigger('change');
+            updateWorldEntryKeyOptionsCache([key], { remove: true });
             input.next('span.select2-container').find('textarea').val(key).trigger('input');
-            }, { openDrawer: true });
+        }, { openDrawer: true });
     } else {
-            template.find(`select[name="${entryPropName}"]`).hide();
-            input.show();
+        template.find(`select[name="${entryPropName}"]`).hide();
+        input.show();
         /**
         * @param {Event} _event
         * @param {{ skipReset?: boolean, noSave?: boolean }} [arg]
         */
         input.on('change', async function (_event, arg) {
-                const uid = $(this).data('uid');
-                const value = String($(this).val());
+            const uid = $(this).data('uid');
+            const value = String($(this).val());
             const skipReset = arg?.skipReset ?? false;
             const noSave = arg?.noSave ?? false;
             if (!skipReset) await resetScrollHeight(this);
-                if (!noSave) {
-                    data.entries[uid][entryPropName] = splitKeywordsAndRegexes(value);
-                    setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
-                    await saveWorldInfo(name, data);
-                    $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
-                }
-            });
-            input.val(entry[entryPropName].join(', ')).trigger('input', { skipReset: true });
-        }
-        return { isFancy: isFancyInput, control: input };
+            if (!noSave) {
+                data.entries[uid][entryPropName] = splitKeywordsAndRegexes(value);
+                setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
+                await saveWorldInfo(name, data);
+                $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
+            }
+        });
+        input.val(entry[entryPropName].join(', ')).trigger('input', { skipReset: true });
     }
+    return { isFancy: isFancyInput, control: input };
+}
 
 /**
  * Helper to handle match checkboxes for WI entries.
@@ -3081,7 +2836,7 @@ function updatePosOrdDisplayHelper({ template, data, uid }) {
         case 4: posText = `@D${entry.depth}`; break;
     }
     template.find('.world_entry_form_position_value').text(`(${posText} ${entry.order})`);
-                }
+}
 
 /**
  * Helper to initialize character filter select2.
@@ -3483,7 +3238,7 @@ export async function getWorldEntry(name, data, entry) {
             return;
         }
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move '${sourceName}' to:`;
+        wrapper.textContent = t`Move/Copy '${sourceName}' to:`;
         const container = document.createElement('div');
         container.appendChild(wrapper);
         container.appendChild(select);
@@ -3491,10 +3246,15 @@ export async function getWorldEntry(name, data, entry) {
         select.addEventListener('change', function () {
             selectedWorldIndex = this.value === '' ? -1 : Number(this.value);
         });
-        const popupConfirm = await callGenericPopup(container, POPUP_TYPE.CONFIRM, '', {
-            okButton: t`Move`,
+        const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
             cancelButton: t`Cancel`,
+            customButtons: [
+                { text: t`Move`, result: POPUP_RESULT.CUSTOM1 },
+                { text: t`Copy`, result: POPUP_RESULT.CUSTOM2 },
+            ],
         });
+        popup.okButton.style.display = 'none'; // Hide the default OK button
+        const popupConfirm = await popup.show();
         if (!popupConfirm) return;
         if (selectedWorldIndex === -1) return;
         const selectedValue = world_names[selectedWorldIndex];
@@ -3502,7 +3262,8 @@ export async function getWorldEntry(name, data, entry) {
             toastr.warning(t`Please select a target lorebook.`);
             return;
         }
-        await moveWorldInfoEntry(sourceWorld, selectedValue, sourceUid);
+        const deleteOriginal = popupConfirm === POPUP_RESULT.CUSTOM1;
+        await moveWorldInfoEntry(sourceWorld, selectedValue, sourceUid, { deleteOriginal });
     });
 
     let drawerInitialized = false;
@@ -3516,8 +3277,8 @@ export async function getWorldEntry(name, data, entry) {
             drawerDestroyTimeout = setTimeout(() => {
                 // Drawer was reopened, so we don't destroy it
                 if (editOutlet.is(':visible')) {
-            return;
-        }
+                    return;
+                }
                 drawerInitialized = false;
                 clearEntryList(editOutlet);
                 drawerDestroyTimeout = null;
@@ -3666,37 +3427,37 @@ export async function getWorldEntry(name, data, entry) {
 
         // Scan depth
         const scanDepthInput = editTemplate.find('input[name="scanDepth"]');
-    scanDepthInput.data('uid', entry.uid);
+        scanDepthInput.data('uid', entry.uid);
         scanDepthInput.on('input', async function (_, { noSave = false } = {}) {
-        const uid = $(this).data('uid');
-        const isEmpty = $(this).val() === '';
-        const value = Number($(this).val());
-        if (value < 0) {
-            $(this).val(0).trigger('input');
-            toastr.warning('Scan depth cannot be negative');
-            return;
-        }
-        if (value > MAX_SCAN_DEPTH) {
-            $(this).val(MAX_SCAN_DEPTH).trigger('input');
-            toastr.warning(`Scan depth cannot exceed ${MAX_SCAN_DEPTH}`);
-            return;
-        }
-        data.entries[uid].scanDepth = !isEmpty && !isNaN(value) && value >= 0 && value <= MAX_SCAN_DEPTH ? Math.floor(value) : null;
-        setWIOriginalDataValue(data, uid, 'extensions.scan_depth', data.entries[uid].scanDepth);
+            const uid = $(this).data('uid');
+            const isEmpty = $(this).val() === '';
+            const value = Number($(this).val());
+            if (value < 0) {
+                $(this).val(0).trigger('input');
+                toastr.warning('Scan depth cannot be negative');
+                return;
+            }
+            if (value > MAX_SCAN_DEPTH) {
+                $(this).val(MAX_SCAN_DEPTH).trigger('input');
+                toastr.warning(`Scan depth cannot exceed ${MAX_SCAN_DEPTH}`);
+                return;
+            }
+            data.entries[uid].scanDepth = !isEmpty && !isNaN(value) && value >= 0 && value <= MAX_SCAN_DEPTH ? Math.floor(value) : null;
+            setWIOriginalDataValue(data, uid, 'extensions.scan_depth', data.entries[uid].scanDepth);
             !noSave && await saveWorldInfo(name, data);
-    });
+        });
         scanDepthInput.val(entry.scanDepth ?? null).trigger('input', { noSave: true });
 
         // Group
         const groupInput = editTemplate.find('input[name="group"]');
         groupInput.data('uid', entry.uid);
         groupInput.on('input', async function (_, { noSave = false } = {}) {
-        const uid = $(this).data('uid');
+            const uid = $(this).data('uid');
             const value = String($(this).val()).trim();
             data.entries[uid].group = value;
             setWIOriginalDataValue(data, uid, 'extensions.group', data.entries[uid].group);
             !noSave && await saveWorldInfo(name, data);
-    });
+        });
         groupInput.val(entry.group ?? '').trigger('input', { noSave: true });
         setTimeout(() => createEntryInputAutocomplete(groupInput, getInclusionGroupCallback(data), { allowMultiple: true }), 1);
 
@@ -3704,12 +3465,12 @@ export async function getWorldEntry(name, data, entry) {
         const groupOverrideInput = editTemplate.find('input[name="groupOverride"]');
         groupOverrideInput.data('uid', entry.uid);
         groupOverrideInput.on('input', async function (_, { noSave = false } = {}) {
-        const uid = $(this).data('uid');
+            const uid = $(this).data('uid');
             const value = $(this).prop('checked');
             data.entries[uid].groupOverride = value;
             setWIOriginalDataValue(data, uid, 'extensions.group_override', data.entries[uid].groupOverride);
             !noSave && await saveWorldInfo(name, data);
-    });
+        });
         groupOverrideInput.prop('checked', entry.groupOverride).trigger('input', { noSave: true });
 
         // Group weight
@@ -3779,16 +3540,16 @@ export async function getWorldEntry(name, data, entry) {
 
         // Automation ID
         const automationIdInput = editTemplate.find('input[name="automationId"]');
-    automationIdInput.data('uid', entry.uid);
+        automationIdInput.data('uid', entry.uid);
         automationIdInput.on('input', async function (_, { noSave = false } = {}) {
-        const uid = $(this).data('uid');
-        const value = $(this).val();
-        data.entries[uid].automationId = value;
-        setWIOriginalDataValue(data, uid, 'extensions.automation_id', data.entries[uid].automationId);
+            const uid = $(this).data('uid');
+            const value = $(this).val();
+            data.entries[uid].automationId = value;
+            setWIOriginalDataValue(data, uid, 'extensions.automation_id', data.entries[uid].automationId);
             !noSave && await saveWorldInfo(name, data);
-    });
+        });
         automationIdInput.val(entry.automationId ?? '').trigger('input', { noSave: true });
-    setTimeout(() => createEntryInputAutocomplete(automationIdInput, getAutomationIdCallback(data)), 1);
+        setTimeout(() => createEntryInputAutocomplete(automationIdInput, getAutomationIdCallback(data)), 1);
 
         // Generation Type Triggers
         const generationTypeTriggers = editTemplate.find('select[name="triggers"]');
@@ -3812,6 +3573,18 @@ export async function getWorldEntry(name, data, entry) {
             .val(Array.isArray(entry.triggers) ? entry.triggers : [])
             .trigger('input', { noSave: true })
             .trigger('change');
+
+        // Ignore budget
+        const ignoreBudgetInput = editTemplate.find('input[name="ignoreBudget"]');
+        ignoreBudgetInput.data('uid', entry.uid);
+        ignoreBudgetInput.on('input', async function (_, { noSave = false } = {}) {
+            const uid = $(this).data('uid');
+            const value = $(this).prop('checked');
+            data.entries[uid].ignoreBudget = value;
+            setWIOriginalDataValue(data, uid, 'extensions.ignore_budget', data.entries[uid].ignoreBudget);
+            !noSave && await saveWorldInfo(name, data);
+        });
+        ignoreBudgetInput.prop('checked', entry.ignoreBudget ?? false).trigger('input', { noSave: true });
 
         countTokensDebounced(counter, contentInput.val());
 
@@ -3932,7 +3705,7 @@ export function duplicateWorldInfoEntry(data, uid) {
     }
 
     // Exclude uid and gather the rest of the properties
-    const originalData = Object.assign({}, data.entries[uid]);
+    const originalData = structuredClone(data.entries[uid]);
     delete originalData.uid;
 
     // Create new entry and copy over data
@@ -3984,6 +3757,7 @@ export const newWorldInfoEntryDefinition = {
     order: { default: 100, type: 'number' },
     position: { default: 0, type: 'number' },
     disable: { default: false, type: 'boolean' },
+    ignoreBudget: { default: false, type: 'boolean' },
     excludeRecursion: { default: false, type: 'boolean' },
     preventRecursion: { default: false, type: 'boolean' },
     matchPersonaDescription: { default: false, type: 'boolean' },
@@ -4069,17 +3843,6 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
-    // Check if user has permission to modify this lorebook
-    if (!isCurrentUserAdmin() && name.startsWith('bb-') && !name.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
-            toastr.error('You do not have permission to modify this lorebook');
-            return;
-        }
-    }
-
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -4093,16 +3856,6 @@ export async function saveWorldInfo(name, data, immediately = false) {
 async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
-
-    // Check if user has permission to rename this lorebook
-    if (!isCurrentUserAdmin() && oldName.startsWith('bb-') && !oldName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
-        if (!isAllowedBotmaker) {
-            toastr.error('You do not have permission to rename this lorebook');
-            return;
-        }
-    }
 
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
@@ -4149,16 +3902,6 @@ async function renameWorldInfo(name, data) {
 export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
-    }
-        // Check if user has permission to delete this lorebook
-    if (!isCurrentUserAdmin() && worldInfoName.startsWith('bb-') && !worldInfoName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
-            toastr.error('You do not have permission to delete this lorebook');
-            return false;
-        }
     }
 
     const response = await fetch('/api/worldinfo/delete', {
@@ -4238,15 +3981,6 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
 
     if (!worldName) {
         return false;
-    }
-
-    // Check if the user is trying to create a lorebook with a protected prefix
-    const userHandle = getCurrentUserHandle();
-    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`)) {
-        if (!isCurrentUserAdmin()) {
-            toastr.error('You can only create loreBooks with your own username prefix');
-            return false;
-        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -4807,7 +4541,17 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         console.debug('[WI] --- PROBABILITY CHECKS ---');
         !newEntries.length && console.debug('[WI] No probability checks to do');
 
+        let ignoresBudget = newEntries.filter(e => e.ignoreBudget).length;
+
         for (const entry of newEntries) {
+            ignoresBudget -= (entry.ignoreBudget ? 1 : 0);
+            if (token_budget_overflowed && !entry.ignoreBudget) {
+                if (ignoresBudget > 0) {
+                    continue;
+                }
+                break;
+            }
+
             function verifyProbability() {
                 // If we don't need to roll, it's always true
                 if (!entry.useProbability || entry.probability === 100) {
@@ -4841,16 +4585,18 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             entry.content = substituteParams(entry.content);
             newContent += `${entry.content}\n`;
 
-            if ((textToScanTokens + (await getTokenCountAsync(newContent))) >= budget) {
-                console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
-                if (world_info_overflow_alert) {
-                    console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
-                    toastr.warning(`World info budget reached after ${allActivatedEntries.size} entries.`, 'World Info');
-                } else {
-                    console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
+            if (!entry.ignoreBudget && (textToScanTokens + (await getTokenCountAsync(newContent))) >= budget) {
+                if (!token_budget_overflowed) {
+                    console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
+                    if (world_info_overflow_alert) {
+                        console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
+                        toastr.warning(`World info budget reached after ${allActivatedEntries.size} entries.`, 'World Info');
+                    } else {
+                        console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
+                    }
+                    token_budget_overflowed = true;
                 }
-                token_budget_overflowed = true;
-                break;
+                continue;
             }
 
             allActivatedEntries.set(`${entry.world}.${entry.uid}`, entry);
@@ -5002,7 +4748,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     buffer.resetExternalEffects();
     timedEffects.cleanUp();
 
-    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`);
+    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`, Array.from(allActivatedEntries.values()));
     console.debug(`[WI] --- DONE${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
     return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };
@@ -5238,6 +4984,7 @@ function convertAgnaiMemoryBook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5281,6 +5028,7 @@ function convertRisuLorebook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5329,6 +5077,7 @@ function convertNovelLorebook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5386,6 +5135,7 @@ export function convertCharacterBook(characterBook) {
             matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
             extensions: entry.extensions ?? {},
             triggers: entry.extensions?.triggers || [],
+            ignoreBudget: entry.extensions?.ignore_budget ?? false,
         };
     });
 
@@ -5634,16 +5384,16 @@ export async function importWorldInfo(file) {
 
         const data = await result.json();
 
-            if (data.name) {
-                await updateWorldInfoList();
+        if (data.name) {
+            await updateWorldInfoList();
 
-                const newIndex = world_names.indexOf(data.name);
-                if (newIndex >= 0) {
-                    $('#world_editor_select').val(newIndex).trigger('change');
-                }
+            const newIndex = world_names.indexOf(data.name);
+            if (newIndex >= 0) {
+                $('#world_editor_select').val(newIndex).trigger('change');
+            }
 
             toastr.success(t`World Info "${data.name}" imported successfully!`);
-            }
+        }
     } catch (error) {
         console.error('Error importing world info:', error);
         toastr.error(t`Failed to import World Info`);
@@ -5713,9 +5463,11 @@ export async function assignLorebookToChat(event) {
  * @param {string} sourceName - The name of the source lorebook file.
  * @param {string} targetName - The name of the target lorebook file.
  * @param {string|number} uid - The UID of the entry to move from the source lorebook.
+ * @param {Object} options - Additional options for the move operation.
+ * @param {boolean} [options.deleteOriginal=true] - Whether to delete the original entry from the source lorebook after moving it.
  * @returns {Promise<boolean>} True if the move was successful, false otherwise.
  */
-export async function moveWorldInfoEntry(sourceName, targetName, uid) {
+export async function moveWorldInfoEntry(sourceName, targetName, uid, { deleteOriginal = true } = {}) {
     if (sourceName === targetName) {
         return false;
     }
@@ -5757,7 +5509,6 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
 
         const entryToMove = structuredClone(sourceData.entries[entryUidString]);
 
-
         const newUid = getFreeWorldEntryUid(targetData);
         if (newUid === null) {
             console.error(`[WI Move] Failed to get a free UID in '${targetName}'.`);
@@ -5771,20 +5522,20 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
 
         targetData.entries[newUid] = entryToMove;
 
-        delete sourceData.entries[entryUidString];
-        // Remove from originalData if it exists
-        deleteWIOriginalDataValue(sourceData, entryUidString);
-        // TODO: setWIOriginalDataValue
-        console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
-
+        if (deleteOriginal) {
+            delete sourceData.entries[entryUidString];
+            // Remove from originalData if it exists
+            deleteWIOriginalDataValue(sourceData, entryUidString);
+            // TODO: setWIOriginalDataValue
+            console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
+        }
 
         await saveWorldInfo(targetName, targetData, true);
         console.debug(`[WI Move] Saved target lorebook '${targetName}'.`);
         await saveWorldInfo(sourceName, sourceData, true);
         console.debug(`[WI Move] Saved source lorebook '${sourceName}'.`);
 
-
-        console.log(`[WI Move] ${entryToMove.comment} moved successfully to '${targetName}'.`);
+        console.log(`[WI Move] ${entryToMove.comment} ${deleteOriginal ? 'moved' : 'copied'} successfully to '${targetName}'.`);
 
         // Check if the currently viewed book in the editor is the source or target and reload it
         const currentEditorBookIndex = Number($('#world_editor_select').val());
@@ -5795,6 +5546,10 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
             }
         }
 
+        toastr.success(deleteOriginal
+            ? t`Entry moved successfully from '${sourceName}' to '${targetName}'.`
+            : t`Entry copied successfully to '${targetName}'.`);
+
         return true;
     } catch (error) {
         toastr.error(t`An unexpected error occurred while moving the entry: ${error.message}`);
@@ -5802,583 +5557,6 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
         return false;
     }
 }
-
-// ======================== WORLD INFO PRESETS SYSTEM ========================
-
-/**
- * Settings class for managing World Info presets
- */
-export class WIPresetSettings {
-    static from(props) {  
-        props.presetList = props.presetList?.map(it => WIPreset.from(it)) ?? [];  
-        const instance = Object.assign(new this(), props);  
-        power_user.worldInfoPresets = instance;  
-        saveSettingsDebounced(); // Add this line  
-        return instance;  
-    }
-}
-
-/**
- * Preset class representing a World Info preset
- */
-export class WIPreset {
-    static from(props) {
-        const instance = Object.assign(new this(), props);
-        return instance;
-    }
-    /**@type {String}*/ name;
-    /**@type {String[]}*/ worldList = [];
-
-    toJSON() {
-        return {
-            name: this.name,
-            worldList: this.worldList,
-        };
-    }
-}
-
-/**@type {WIPresetSettings}*/
-export let wiPresetSettings;
-
-/**@type {HTMLSelectElement}*/
-let wiPresetSelect;
-
-/**
- * Activate a preset by name
- */
-const activateWIPresetByName = async (name) => {
-    await activateWIPreset(wiPresetSettings.presetList.find(it => it.name.toLowerCase() == name.toLowerCase()));
-};
-
-/**
- * Activate a World Info preset
- */
-export const activateWIPreset = async (preset) => {
-    // Clear current selection
-    selected_world_info.length = 0;
-    $('#world_info').val('');
-    
-    wiPresetSettings.presetName = preset?.name ?? '';
-    updateWIPresetSelect();
-    
-    if (preset) {
-        // Add worlds from preset to selection
-        for (const world of preset.worldList) {
-            if (world_names.includes(world) && !selected_world_info.includes(world)) {
-                selected_world_info.push(world);
-            }
-        }
-        
-        // Update the UI
-        updateWorldInfoList();
-        eventSource.emit(event_types.WORLDINFO_SETTINGS_UPDATED);
-    }
-    
-    saveSettingsDebounced();
-};
-
-/**
- * Update the preset select dropdown
- */
-const updateWIPresetSelect = () => {
-    if (!wiPresetSelect) return;
-    
-    /**@type {HTMLOptionElement[]}*/
-    const opts = Array.from(wiPresetSelect.children);
-
-    const added = [];
-    const removed = [];
-    const updated = [];
-    
-    for (const preset of wiPresetSettings.presetList) {
-        const opt = opts.find(opt => opt.value.toLowerCase() == preset.name.toLowerCase());
-        if (opt) {
-            if (opt.value != preset.name) {
-                updated.push({ preset, opt });
-            }
-        } else {
-            added.push(preset);
-        }
-    }
-    
-    for (const opt of opts) {
-        if (opt.value == '') continue;
-        if (wiPresetSettings.presetList.find(preset => opt.value.toLowerCase() == preset.name.toLowerCase())) continue;
-        removed.push(opt);
-    }
-    
-    for (const opt of removed) {
-        opt.remove();
-        opts.splice(opts.indexOf(opt), 1);
-    }
-    
-    for (const update of updated) {
-        update.opt.value = update.preset.name;
-        update.opt.textContent = update.preset.name;
-    }
-    
-    const sortedOpts = opts.toSorted((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
-    sortedOpts.forEach((opt, idx) => {
-        if (wiPresetSelect.children[idx] != opt) {
-            wiPresetSelect.children[idx].insertAdjacentElement('beforebegin', opt);
-        }
-    });
-    
-    for (const preset of added) {
-        const opt = document.createElement('option');
-        opt.value = preset.name;
-        opt.textContent = preset.name;
-        opt.title = preset.worldList.join(', ');
-        const before = Array.from(wiPresetSelect.children).find(it => it.value.toLowerCase().localeCompare(preset.name.toLowerCase()) == 1);
-        if (before) before.insertAdjacentElement('beforebegin', opt);
-        else wiPresetSelect.append(opt);
-    }
-    
-    wiPresetSelect.value = wiPresetSettings.presetName;
-};
-
-/**
- * Load a World Info book from the backend for presets
- */
-const loadWIBook = async (name) => {
-    const result = await fetch('/api/worldinfo/get', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ name }),
-    });
-    if (result.ok) {
-        const data = await result.json();
-        data.entries = Object.keys(data.entries).map(it => {
-            data.entries[it].book = name;
-            return data.entries[it];
-        });
-        data.book = name;
-        return data;
-    } else {
-        toastr.warning(`Failed to load World Info book: ${name}`);
-    }
-};
-
-/**
- * Import books included in a preset
- */
-const importWIBooks = async (data) => {
-    if (data.books && Object.keys(data.books).length > 0) {
-        const doImport = await callGenericPopup(`<h3>The preset contains World Info books. Import the books?</h3>`, POPUP_TYPE.CONFIRM);
-        if (doImport) {
-            for (const key of Object.keys(data.books)) {
-                const book = data.books[key];
-                const blob = new Blob([JSON.stringify(book)], { type: 'text' });
-                const file = new File([blob], `${key}.json`);
-                await importWorldInfo(file);
-            }
-        }
-    }
-};
-
-/**
- * Import World Info presets from files
- */
-const importWIPreset = async (files) => {
-    for (let i = 0; i < files.length; i++) {
-        await importSingleWIPreset(files.item(i));
-    }
-};
-
-/**
- * Import a single World Info preset file
- */
-const importSingleWIPreset = async (file) => {
-    try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        let old = wiPresetSettings.presetList.find(it => it.name.toLowerCase() == data.name.toLowerCase());
-        
-        while (old) {
-            const popupText = `
-                <h3>Import World Info Preset: "${data.name}"</h3>
-                <h4>
-                    A preset by that name already exists. Change the name to import under a new name,
-                    or keep the name to overwrite the existing preset.
-                </h4>
-            `;
-            const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, data.name);
-            if (newName == data.name) {
-                const overwrite = await callGenericPopup(`<h3>Overwrite World Info Preset "${newName}"?</h3>`, POPUP_TYPE.CONFIRM);
-                if (overwrite) {
-                    old.worldList = data.worldList;
-                    await importWIBooks(data);
-                    if (wiPresetSettings.preset == old) {
-                        activateWIPreset(old);
-                        saveSettingsDebounced();
-                    }
-                }
-                return;
-            } else {
-                data.name = newName;
-                old = wiPresetSettings.presetList.find(it => it.name.toLowerCase() == data.name.toLowerCase());
-            }
-        }
-        
-        const preset = new WIPreset();
-        preset.name = data.name;
-        preset.worldList = data.worldList;
-        wiPresetSettings.presetList.push(preset);
-        await importWIBooks(data);
-        updateWIPresetSelect();
-        saveSettingsDebounced();
-    } catch (ex) {
-        toastr.error(`Failed to import "${file.name}":\n\n${ex.message}`);
-    }
-};
-
-/**
- * Create a new World Info preset
- */
-const createWIPreset = async () => {
-    const name = await callGenericPopup('<h3>Preset Name:</h3>', POPUP_TYPE.INPUT, wiPresetSettings.presetName);
-    if (!name) return;
-    
-    const preset = new WIPreset();
-    preset.name = name;
-    preset.worldList = [...selected_world_info];
-    wiPresetSettings.presetList.push(preset);
-    wiPresetSettings.presetName = name;
-    updateWIPresetSelect();
-    saveSettingsDebounced();
-};
-
-/**
- * Initialize the World Info presets UI
- */
-const initWIPresets = () => {
-    // Initialize preset settings now that power_user is available
-    wiPresetSettings = WIPresetSettings.from(power_user.worldInfoPresets ?? {});
-    
-    const container = document.querySelector('#WorldInfo > div > h3');
-    const dom = document.createElement('div');
-    dom.classList.add('wi-presets-container');
-    
-    wiPresetSelect = document.createElement('select');
-    wiPresetSelect.classList.add('wi-presets-select', 'text_pole');
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '--- Pick a Preset ---';
-    wiPresetSelect.append(blank);
-    
-    for (const preset of wiPresetSettings.presetList.toSorted((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))) {
-        const opt = document.createElement('option');
-        opt.value = preset.name;
-        opt.textContent = preset.name;
-        opt.title = preset.worldList.join(', ');
-        wiPresetSelect.append(opt);
-    }
-    
-    wiPresetSelect.value = wiPresetSettings.presetName ?? '';
-    wiPresetSelect.addEventListener('change', async () => {
-        await activateWIPresetByName(wiPresetSelect.value);
-    });
-    dom.append(wiPresetSelect);
-    
-    const actions = document.createElement('div');
-    actions.classList.add('wi-presets-actions');
-    
-    // Rename button
-    const btnRename = document.createElement('div');
-    btnRename.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-pencil');
-    btnRename.title = 'Rename current preset';
-    btnRename.addEventListener('click', async () => {
-        const name = await callGenericPopup('<h3>Rename Preset:</h3>', POPUP_TYPE.INPUT, wiPresetSettings.presetName);
-        if (!name) return;
-        wiPresetSettings.preset.name = name;
-        wiPresetSettings.presetName = name;
-        updateWIPresetSelect();
-        saveSettingsDebounced();
-    });
-    actions.append(btnRename);
-    
-    // Update button
-    const btnUpdate = document.createElement('div');
-    btnUpdate.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-save');
-    btnUpdate.title = 'Update current preset';
-    btnUpdate.addEventListener('click', () => {
-        if (!wiPresetSettings.preset) return createWIPreset();
-        wiPresetSettings.preset.worldList = [...selected_world_info];
-        saveSettingsDebounced();
-    });
-    actions.append(btnUpdate);
-    
-    // Create button
-    const btnCreate = document.createElement('div');
-    btnCreate.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-circle-plus');
-    btnCreate.title = 'Save current preset as';
-    btnCreate.addEventListener('click', async () => createWIPreset());
-    actions.append(btnCreate);
-    
-    // Restore button
-    const btnRestore = document.createElement('div');
-    btnRestore.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-rotate-left');
-    btnRestore.title = 'Restore current preset';
-    btnRestore.addEventListener('click', () => activateWIPreset(wiPresetSettings.preset));
-    actions.append(btnRestore);
-    
-    // Import file input and button
-    const importFile = document.createElement('input');
-    importFile.classList.add('wi-presets-import-file');
-    importFile.type = 'file';
-    importFile.style.display = 'none';
-    importFile.addEventListener('change', async () => {
-        await importWIPreset(importFile.files);
-        importFile.value = null;
-    });
-    
-    const btnImport = document.createElement('div');
-    btnImport.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-import');
-    btnImport.title = 'Import preset';
-    btnImport.addEventListener('click', () => importFile.click());
-    actions.append(btnImport);
-    
-    // Export button
-    const btnExport = document.createElement('div');
-    btnExport.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-export');
-    btnExport.title = 'Export the current preset';
-    btnExport.addEventListener('click', async () => {
-        const popupText = `
-            <h3>Export World Info Preset: "${wiPresetSettings.presetName}"</h3>
-            <h4>Include the books' contents in the exported file?</h4>
-        `;
-        const includeBooks = await callGenericPopup(popupText, POPUP_TYPE.CONFIRM);
-        const data = wiPresetSettings.preset.toJSON();
-        if (includeBooks) {
-            let names = selected_world_info;
-            const books = {};
-            for (const book of names) {
-                books[book] = await loadWIBook(book);
-            }
-            data.books = books;
-        }
-        const blob = new Blob([JSON.stringify(data)], { type: 'text' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const name = `SillyTavern-WorldInfoPreset-${wiPresetSettings.presetName}`;
-        const ext = 'json';
-        a.download = `${name}.${ext}`;
-        a.click();
-    });
-    actions.append(btnExport);
-    
-    // Delete button
-    const btnDelete = document.createElement('div');
-    btnDelete.classList.add('wi-presets-action', 'menu_button', 'redWarningBG', 'fa-solid', 'fa-trash-can');
-    btnDelete.title = 'Delete the current preset';
-    btnDelete.addEventListener('click', async () => {
-        if (wiPresetSettings.presetName == '') return;
-        const confirmed = await callGenericPopup(`<h3>Delete World Info Preset "${wiPresetSettings.presetName}"?</h3>`, POPUP_TYPE.CONFIRM);
-        if (confirmed) {
-            wiPresetSettings.presetList.splice(wiPresetSettings.presetList.indexOf(wiPresetSettings.preset), 1);
-            wiPresetSettings.presetName = '';
-            updateWIPresetSelect();
-            saveSettingsDebounced();
-        }
-    });
-    actions.append(btnDelete);
-    
-    dom.append(actions);
-    dom.append(importFile);
-    container.insertAdjacentElement('afterend', dom);
-    
-    // Watch for world name changes to update presets
-    const sel = document.querySelector('#world_editor_select');
-    let bookNames = Array.from(sel.children).map(it => it.textContent);
-    const mo = new MutationObserver(async (muts) => {
-        const newNames = Array.from(sel.children).map(it => it.textContent);
-        const added = [];
-        const removed = [];
-        for (const nn of newNames) {
-            if (!bookNames.includes(nn)) added.push(nn);
-        }
-        for (const bn of bookNames) {
-            if (!newNames.includes(bn)) removed.push(bn);
-        }
-        if (added.length == 1 && removed.length == 1) {
-            const oldName = removed[0];
-            const newName = added[0];
-            const presets = wiPresetSettings.presetList.filter(preset => preset.worldList.includes(oldName));
-            if (presets.length > 0) {
-                const popupText = `
-                    <div style="text-align:left;">
-                        <h3>World Info Renamed</h3>
-                        <p>It looks like you renamed the World Info book "${oldName}" to "${newName}".</p>
-                        <p>The following presets currently include the World Info book "${oldName}":</p>
-                        <ul>
-                            ${presets.map(it => `<li>${it.name}</li>`).join('')}
-                        </ul>
-                        <p>
-                            Do you want to update all ${presets.length} presets that include "<strong>${oldName}</strong>" to now include "<strong>${newName}</strong>" instead?
-                        </p>
-                    </div>
-                `;
-                const dlg = new Popup(popupText, POPUP_TYPE.CONFIRM);
-                await dlg.show();
-                if (dlg.result == POPUP_RESULT.AFFIRMATIVE) {
-                    for (const preset of presets) {
-                        preset.worldList.splice(preset.worldList.indexOf(oldName), 1, newName);
-                    }
-                    saveSettingsDebounced();
-                }
-            }
-        }
-        bookNames = [...newNames];
-    });
-    mo.observe(sel, { childList: true });
-};
-
-// ======================== WORLD INFO TRANSFER SYSTEM ========================
-
-/**
- * Initialize the World Info transfer functionality
- */
-const initWITransfer = () => {
-    const alterTemplate = () => {  
-        const tpl = document.querySelector('#entry_edit_template');  
-        if (!tpl) {  
-            console.warn('Entry edit template not found, retrying...');  
-            setTimeout(alterTemplate, 100);  
-            return;  
-        }  
-        const transferBtn = document.createElement('i');
-        transferBtn.classList.add('wi-transfer-btn', 'menu_button', 'fa-solid', 'fa-truck-arrow-right');
-        transferBtn.title = 'Copy world info entry to another book';
-        tpl.querySelector('.duplicate_entry_button').insertAdjacentElement('beforebegin', transferBtn);
-    };
-    alterTemplate();
-
-    const mo = new MutationObserver(muts => {
-        for (const entry of [...document.querySelectorAll('#world_popup_entries_list .world_entry:not(.wi-transfer-processed)')]) {
-            const uid = entry.getAttribute('uid');
-            entry.classList.add('wi-transfer-processed');
-            const transferBtn = entry.querySelector('.wi-transfer-btn');
-            transferBtn.addEventListener('click', async (evt) => {
-                evt.stopPropagation();
-                let sel;
-                let isCopy = false;
-                const dom = document.createElement('div');
-                dom.classList.add('wi-transfer-modal');
-                
-                const title = document.createElement('h3');
-                title.textContent = 'Copy World Info Entry';
-                dom.append(title);
-                
-                const subTitle = document.createElement('h4');
-                const entryName = transferBtn.closest('.world_entry').querySelector('[name="comment"]').value ?? transferBtn.closest('.world_entry').querySelector('[name="key"]').value;
-                const bookName = document.querySelector('#world_editor_select').selectedOptions[0].textContent;
-                subTitle.textContent = `${bookName}: ${entryName}`;
-                dom.append(subTitle);
-                
-                sel = document.querySelector('#world_editor_select').cloneNode(true);
-                sel.classList.add('wi-world-select');
-                sel.value = document.querySelector('#world_editor_select').value;
-                sel.addEventListener('keyup', (evt) => {
-                    if (evt.key == 'Shift') {
-                        (dlg.dom ?? dlg.dlg).classList.remove('wi-is-copy');
-                        return;
-                    }
-                });
-                sel.addEventListener('keydown', (evt) => {
-                    if (evt.key == 'Shift') {
-                        (dlg.dom ?? dlg.dlg).classList.add('wi-is-copy');
-                        return;
-                    }
-                    if (!evt.ctrlKey && !evt.altKey && evt.key == 'Enter') {
-                        evt.preventDefault();
-                        if (evt.shiftKey) isCopy = true;
-                        dlg.completeAffirmative();
-                    }
-                });
-                dom.append(sel);
-                
-                const hintP = document.createElement('p');
-                const hint = document.createElement('small');
-                hint.textContent = 'Select the destination book and click Copy to duplicate this entry.';
-                hintP.append(hint);
-                dom.append(hintP);
-                
-                const dlg = new Popup(dom, POPUP_TYPE.CONFIRM, null, { okButton: 'Copy', cancelButton: 'Cancel' });
-                // Always set isCopy to true since we only support copying now
-                isCopy = true;
-                
-                const prom = dlg.show();
-                sel.focus();
-                await prom;
-                
-                if (dlg.result == POPUP_RESULT.AFFIRMATIVE) {
-                    toastr.info('Copying WI Entry');
-                    const srcName = document.querySelector('#world_editor_select').selectedOptions[0].textContent;
-                    const dstName = sel.selectedOptions[0].textContent;
-                    if (srcName == dstName) {
-                        toastr.warning(`Entry is already in book "${dstName}"`);
-                        return;
-                    }
-                    
-                    let page = document.querySelector('#world_info_pagination .paginationjs-prev[data-num]')?.getAttribute('data-num');
-                    if (page === undefined) {
-                        page = document.querySelector('#world_info_pagination .paginationjs-next[data-num]')?.getAttribute('data-num');
-                        if (page !== undefined) {
-                            page = (Number(page) - 1).toString();
-                        }
-                    } else {
-                        page = (Number(page) + 1).toString();
-                    }
-                    
-                    const [srcBook, dstBook] = await Promise.all([
-                        loadWorldInfo(srcName),
-                        loadWorldInfo(dstName),
-                    ]);
-                    
-                    if (srcBook && dstBook) {
-                        const srcEntry = srcBook.entries[uid];
-                        const oData = Object.assign({}, srcEntry);
-                        delete oData.uid;
-                        const dstEntry = createWorldInfoEntry(null, dstBook);
-                        Object.assign(dstEntry, oData);
-                        await saveWorldInfo(dstName, dstBook, true);
-                        
-                        if (!isCopy) {
-                            const deleted = await deleteWorldInfoEntry(srcBook, uid, { silent: true });
-                            if (deleted) {
-                                deleteWIOriginalDataValue(srcBook, uid);
-                                await saveWorldInfo(srcName, srcBook, true);
-                            }
-                        }
-                        
-                        toastr.info('Almost copied...');
-                        document.querySelector('#world_editor_select').value = '';
-                        document.querySelector('#world_editor_select').dispatchEvent(new Event('change', { bubbles: true }));
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        document.querySelector('#world_editor_select').value = [...document.querySelector('#world_editor_select').children].find(it => it.textContent == srcName).value;
-                        let saveProm = new Promise(resolve => eventSource.once(event_types.WORLDINFO_UPDATED, resolve));
-                        document.querySelector('#world_editor_select').dispatchEvent(new Event('change', { bubbles: true }));
-                        await saveProm;
-                        
-                        if (page !== undefined) {
-                            saveProm = new Promise(resolve => eventSource.once(event_types.WORLDINFO_UPDATED, resolve));
-                            document.querySelector('#world_info_pagination .paginationjs-next').setAttribute('data-num', page.toString());
-                            document.querySelector('#world_info_pagination .paginationjs-next').click();
-                            await saveProm;
-                        }
-                        toastr.success('Copied WI Entry');
-                    } else {
-                        toastr.error('Something went wrong');
-                    }
-                }
-            });
-        }
-    });
-    mo.observe(document.querySelector('#world_popup_entries_list'), { childList: true, subtree: true });
-};
-
-// ======================== END PRESETS AND TRANSFER SYSTEMS ========================
 
 export function initWorldInfo() {
     $('#world_info').on('mousedown change', async function (e) {
@@ -6565,6 +5743,14 @@ export function initWorldInfo() {
 
     // Not needed on mobile
     if (!isMobile()) {
+        $('#world_editor_select').select2({
+            placeholder: t`--- Pick to Edit ---`,
+            searchInputPlaceholder: t`Search...`,
+            allowClear: true,
+            closeOnSelect: true,
+            multiple: false,
+        });
+
         $('#world_info').select2({
             width: '100%',
             placeholder: t`No Worlds active. Click here to select.`,
@@ -6595,25 +5781,4 @@ export function initWorldInfo() {
             }
         });
     });
-    
-    // Register slash command for presets
-    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'wipreset',
-        callback: (args, value) => {
-            activateWIPresetByName(value);
-        },
-        unnamedArgumentList: [
-            SlashCommandArgument.fromProps({
-                description: 'preset name',
-                typeList: [ARGUMENT_TYPE.STRING],
-                isRequired: false,
-            }),
-        ],
-        helpString: 'Activate a World Info preset. Leave name blank to deactivate current preset (unload all WI books).',
-        aliases: ['worldinfopreset'],
-    }));
-
-    // Initialize presets and transfer functionality
-    initWIPresets();
-    initWITransfer();
 }

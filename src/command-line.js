@@ -4,7 +4,7 @@ import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import ipRegex from 'ip-regex';
 import envPaths from 'env-paths';
-import { canResolve, color, getConfigValue, stringToBool } from './util.js';
+import { color, getConfigValue, stringToBool } from './util.js';
 import { initConfig } from './config-init.js';
 
 /**
@@ -49,8 +49,8 @@ export class CommandLineParser {
      */
     getDefaultConfig(isGlobal) {
         const appPaths = envPaths('SillyTavern', { suffix: '' });
-        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : '/home/node/app/config.yaml';
-        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : '/home/node/app/data';
+        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : './config.yaml';
+        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : './data';
         return Object.freeze({
             configPath: configPath,
             dataRoot: dataPath,
@@ -314,10 +314,8 @@ export class CommandLineParser {
             },
             getBrowserLaunchHostname: async function ({ useIPv6, useIPv4 }) {
                 if (this.browserLaunchHostname === 'auto') {
-                    const localhostResolve = await canResolve('localhost', useIPv6, useIPv4);
-
                     if (useIPv6 && useIPv4) {
-                        return (this.browserLaunchAvoidLocalhost || !localhostResolve) ? '[::1]' : 'localhost';
+                        return this.browserLaunchAvoidLocalhost ? '[::1]' : 'localhost';
                     }
 
                     if (useIPv6) {

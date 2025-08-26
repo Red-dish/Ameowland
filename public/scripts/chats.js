@@ -14,7 +14,6 @@ import {
     name1,
     name2,
     reloadCurrentChat,
-    saveChatDebounced,
     saveSettingsDebounced,
     showSwipeButtons,
     this_chid,
@@ -70,7 +69,7 @@ import { accountStorage } from './util/AccountStorage.js';
  * @returns {Promise<string>} Converted file text
  */
 
-const fileSizeLimit = 1024 * 1024 * 500; // 500 MB
+const fileSizeLimit = 1024 * 1024 * 350; // 350 MB
 const ATTACHMENT_SOURCE = {
     GLOBAL: 'global',
     CHARACTER: 'character',
@@ -163,7 +162,7 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
     hideSwipeButtons();
     showSwipeButtons();
 
-    saveChatDebounced();
+    await saveChatConditional();
 }
 
 /**
@@ -1925,7 +1924,10 @@ export function initChatUtilities() {
         embedMessageFile(messageId, messageBlock);
     });
 
-    $(document).on('click', '.editor_maximize', async function () {
+    $(document).on('click', '.editor_maximize', async function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
         const broId = $(this).attr('data-for');
         const bro = $(`#${broId}`);
         const contentEditable = bro.is('[contenteditable]');
