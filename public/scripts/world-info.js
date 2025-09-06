@@ -17,7 +17,7 @@ import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '
 import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandEnumValue.js';
 import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCommonEnumsProvider.js';
 import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
-import { callGenericPopup, Popup, POPUP_TYPE } from './popup.js';
+import { callGenericPopup, Popup, POPUP_TYPE, POPUP_RESULT } from './popup.js';
 import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
@@ -26,18 +26,20 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
+    "default-user":["#hidden#-Xavier"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
-        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran"
+        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", "bb-hailey-Jett"
     ],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami"],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander"],
+    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
-    "zelle":["bb-zelle-testing","bb-zelle-zayneli"],
-    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"]
+    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
+    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"],
+    "ravenh":["bb-ravenh-Ryker"],
 };
 
 
@@ -4587,7 +4589,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             let headerLogged = false;
             function log(...args) {
                 if (!headerLogged) {
-                    console.debug(`[WI] Entry ${entry.uid}`, `from '${entry.world}' processing`, entry);
+                    console.debug(`[WI] Entry ${entry.uid}`, `from '${entry.world}' processing`);
                     headerLogged = true;
                 }
                 console.debug(`[WI] Entry ${entry.uid}`, ...args);
@@ -4854,7 +4856,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             }
 
             allActivatedEntries.set(`${entry.world}.${entry.uid}`, entry);
-            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`, entry);
+            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`);
         }
 
         const successfulNewEntries = newEntries.filter(x => !failedProbabilityChecks.has(x));
@@ -4866,7 +4868,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         } else if (!successfulNewEntries.length) {
             console.debug('[WI] Probability checks failed for all activated entries. No new entries activated.');
         } else {
-            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`, successfulNewEntries);
+            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`);
         }
 
         function logNextState(...args) {
