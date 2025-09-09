@@ -1,0 +1,390 @@
+/* SillyTavern Favorites Extension Styles */
+
+/* Star button styling */
+.favorite_button {
+    color: #888;
+    transition: color 0.2s ease-in-out, transform 0.1s ease-in-out, opacity 0.2s ease-in-out;
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.favorite_button:hover {
+    color: #ffd700 !important;
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.favorite_button.fa-solid {
+    color: #ffd700 !important;
+    opacity: 1;
+}
+
+/* Message favorite button */
+.message_favorite_button {
+    margin: 0 2px;
+}
+
+/* Chat file favorite button */
+.chat_favorite_button {
+    margin-left: 5px;
+    font-size: 0.9em;
+}
+
+/* Favorites window styling */
+.favorites_window {
+    min-width: 600px;
+    max-width: 800px;
+    width: 100%;
+}
+
+.favorites_tabs {
+    display: flex;
+    border-bottom: 2px solid var(--SmartThemeBorderColor);
+    margin-bottom: 15px;
+}
+
+.favorites_tab {
+    flex: 1;
+    padding: 10px 15px;
+    background-color: var(--SmartThemeBodyColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-bottom: none;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s ease-in-out;
+    font-weight: 500;
+}
+
+.favorites_tab:not(:last-child) {
+    border-right: none;
+}
+
+.favorites_tab:hover {
+    background-color: var(--SmartThemeQuoteColor);
+}
+
+.favorites_tab.active {
+    background-color: var(--SmartThemeQuoteColor);
+    border-bottom: 2px solid var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeBodyColor);
+}
+
+.favorites_tab i {
+    margin-right: 8px;
+}
+
+.favorites_content {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.favorites_tab_content {
+    display: none;
+}
+
+.favorites_tab_content.active {
+    display: block;
+}
+
+.favorites_list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.favorite_item {
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 12px;
+    transition: box-shadow 0.2s ease-in-out;
+}
+
+.favorite_item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.favorite_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.favorite_header strong {
+    color: var(--SmartThemeBodyColor);
+    font-size: 14px;
+}
+
+.favorite_date {
+    color: var(--SmartThemeBotMesTextColor);
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.remove_favorite {
+    background: none;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease-in-out;
+    font-size: 12px;
+}
+
+.remove_favorite:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.favorite_text {
+    color: var(--SmartThemeBotMesTextColor);
+    font-size: 13px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    margin-bottom: 4px;
+}
+
+.favorite_details {
+    color: var(--SmartThemeBotMesTextColor);
+    font-size: 12px;
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.no_favorites {
+    text-align: center;
+    color: var(--SmartThemeBotMesTextColor);
+    opacity: 0.6;
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+/* Extension menu button styling */
+#favorites_menu_button {
+    transition: background-color 0.2s ease-in-out;
+}
+
+#favorites_menu_button:hover {
+    background-color: var(--SmartThemeQuoteColor);
+}
+
+#favorites_menu_button .extensionsMenuExtensionIcon {
+    color: #ffd700;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .favorites_window {
+        min-width: 320px;
+        max-width: 100%;
+    }
+    
+    .favorites_tab {
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+    
+    .favorites_tab i {
+        margin-right: 5px;
+    }
+    
+    .favorite_item {
+        padding: 10px;
+    }
+    
+    .favorite_header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .favorite_date {
+        align-self: flex-end;
+    }
+    
+    .remove_favorite {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+}
+
+/* Dark theme compatibility */
+.dark .favorite_button {
+    color: #ccc;
+}
+
+.dark .favorite_button:hover {
+    color: #ffd700 !important;
+}
+
+.dark .favorites_tab {
+    color: #ddd;
+}
+
+.dark .favorites_tab.active {
+    color: #000;
+}
+
+.dark .favorite_item {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .favorite_header strong {
+    color: #fff;
+}
+
+.dark .favorite_text {
+    color: #ddd;
+}
+
+.dark .favorite_details {
+    color: #bbb;
+}
+
+.dark .no_favorites {
+    color: #999;
+}
+
+/* Animation for star button state changes */
+.favorite_button {
+    animation-duration: 0.3s;
+    animation-timing-function: ease-in-out;
+}
+
+.favorite_button.fa-solid.newly-favorited {
+    animation: starGlow 0.5s ease-in-out;
+}
+
+@keyframes starGlow {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+/* Scrollbar styling for favorites content */
+.favorites_content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.favorites_content::-webkit-scrollbar-track {
+    background: var(--SmartThemeBlurTintColor);
+    border-radius: 3px;
+}
+
+.favorites_content::-webkit-scrollbar-thumb {
+    background: var(--SmartThemeBorderColor);
+    border-radius: 3px;
+}
+
+.favorites_content::-webkit-scrollbar-thumb:hover {
+    background: var(--SmartThemeQuoteColor);
+}
+
+/* Ensure proper spacing in message buttons */
+.mes_buttons .extraMesButtons .favorite_button {
+    margin: 0 1px;
+}
+
+/* Chat file selection interface integration */
+.select_chat_block_wrapper .chat_favorite_button {
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: background-color 0.2s ease-in-out;
+    margin-right: 5px;
+}
+
+.select_chat_block_wrapper .chat_favorite_button:hover {
+    background-color: rgba(255, 215, 0, 0.1);
+}
+
+/* Highlighted message styling for navigation */
+.mes.highlighted {
+    animation: messageHighlight 2s ease-in-out forwards; /* Use forwards to keep the final state */
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+    border-left: 4px solid #ffd700;
+}
+
+@keyframes messageHighlight {
+    0% {
+        box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        border-left: 4px solid #ffd700;
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+        border-left: 6px solid #ffd700;
+    }
+    100% {
+        box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        border-left: 4px solid #ffd700;
+    }
+}
+
+/* Cursor pointer for clickable favorite items */
+.favorite_item.clickable {
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.favorite_item.clickable:hover {
+    background-color: rgba(255, 215, 0, 0.1);
+}
+
+/* Remove button styling */
+.remove_favorite {
+    background: none;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.remove_favorite:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #ff6b7d;
+    opacity: 1;
+}
+
+.remove_favorite i {
+    font-size: 14px;
+}
+
+/* Favorite header layout */
+.favorite_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    position: relative;
+}
+
+.favorite_header strong {
+    flex: 1;
+    color: var(--SmartThemeBodyColor);
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.favorite_date {
+    color: var(--SmartThemeBotMesTextColor);
+    font-size: 12px;
+    opacity: 0.7;
+    margin-right: 8px;
+}
+
+/* Dark theme support for remove button */
+.dark .remove_favorite {
+    color: #ff6b7d;
+}
+
+.dark .remove_favorite:hover {
+    background-color: rgba(255, 107, 125, 0.1);
+    color: #ffb3ba;
+}

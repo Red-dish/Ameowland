@@ -1,0 +1,12 @@
+{
+    "display_name": "Favorites",
+    "description": "Add favoriting functionality for both chat messages and chat files",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "SillyTavern Favorites Extension",
+    "version": "1.0.0",
+    "auto_update": false
+}
