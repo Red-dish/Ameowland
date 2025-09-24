@@ -1,12 +1,12 @@
 {
-    "display_name": "Favorites",
-    "description": "Add favoriting functionality for both chat messages and chat files",
+    "display_name": "Favorite Chats",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "SillyTavern Favorites Extension",
+    "author": "Red-dish",
     "version": "1.0.0",
-    "auto_update": false
+    "homePage": "https://github.com/Red-dish/SillyTavern-Favorites",
+    "auto_update": true
 }

@@ -1,525 +1,597 @@
 /**
- * SillyTavern Favorites Extension
+ * Favorites Extension for SillyTavern
  * Adds favoriting functionality for both chat messages and chat files
  */
-import {
-	characters,
-	eventSource,
-	event_types,
-	getCurrentChatId,
-	saveSettingsDebounced,
-	this_chid,
-	chat,
-	chat_metadata,
-} from '../../../script.js';
-import {
-	extension_settings,
-	renderExtensionTemplateAsync,
-} from '../../extensions.js';
-import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
-import { t } from '../../i18n.js';
 
-// toastr is available globally in SillyTavern
-const toastr = window.toastr;
+import { eventSource, event_types } from '../../../scripts/events.js';
+import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../scripts/extensions.js';
+import { 
+    saveSettingsDebounced, 
+    getCurrentChatId, 
+    chat, 
+    chat_metadata, 
+    characters 
+} from '../../../script.js';
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
+import { t } from '../../../scripts/i18n.js';
 
 // Extension constants
-const EXTENSION_NAME = 'SillyTavern Favorites';
-const settingsKey = 'SillyTavernFavorites';
+const EXTENSION_NAME = 'Favorites';
+const settingsKey = 'SillyTavern-Favorites';
+const extensionName = 'favorites';
 
 // Default settings structure
 const defaultSettings = {
-	enabled: true,
-	favoriteMessages: [], // Array of { chatId, messageId, messageText, timestamp, characterName }
-	favoriteChatFiles: [], // Array of { fileName, lastModified, characterName, messageCount }
-	showStarOnHover: true,
-	starPosition: 'right', // 'left' or 'right' in message buttons
+    enabled: true,
+    favoriteMessages: [], // Array of {chatId, messageId, content, timestamp}
+    favoriteChatFiles: [], // Array of {filename, timestamp}
+    windowPosition: { x: 100, y: 100 },
+    activeTab: 'messages' // 'messages' or 'chatfiles'
 };
 
-// Settings reference
+// Global state
 let settings = {};
+let favoritesWindow = null;
 
 /**
- * Initialize extension settings
+ * Initialize the extension settings
  */
 function initializeSettings() {
-	// Check if settings exist, create default if not
-	if (!extension_settings[settingsKey]) {
-		console.log(`[${EXTENSION_NAME}] Creating default settings`);
-		extension_settings[settingsKey] = {
-			...defaultSettings,
-		};
-	}
-
-	// Reference to settings for easier access
-	settings = extension_settings[settingsKey];
-
-	// Ensure all required properties exist (for migration)
-	Object.keys(defaultSettings).forEach((key) => {
-		if (settings[key] === undefined) {
-			settings[key] = defaultSettings[key];
-		}
-	});
-
-	console.log(`[${EXTENSION_NAME}] Settings initialized:`, settings);
+    // Get extension settings from context
+    const context = getContext();
+    
+    // Initialize settings if they don't exist
+    if (!context.extensionSettings[settingsKey]) {
+        context.extensionSettings[settingsKey] = { ...defaultSettings };
+    }
+    
+    // Load current settings
+    settings = context.extensionSettings[settingsKey];
+    
+    // Ensure all default properties exist
+    Object.keys(defaultSettings).forEach(key => {
+        if (settings[key] === undefined) {
+            settings[key] = defaultSettings[key];
+        }
+    });
+    
+    console.log('Favorites extension settings initialized:', settings);
 }
 
 /**
- * Save settings to SillyTavern's settings system
+ * Save extension settings
  */
-async function saveSettings() {
-	extension_settings[settingsKey] = settings;
-	saveSettingsDebounced();
-	console.log(`[${EXTENSION_NAME}] Settings saved`);
+function saveSettings() {
+    const context = getContext();
+    context.extensionSettings[settingsKey] = settings;
+    saveSettingsDebounced();
 }
 
 /**
- * Add a message to favorites
- */
-async function addMessageToFavorites(messageData) {
-	const chatId = getCurrentChatId();
-	const characterName = characters[this_chid]?.name || 'Unknown';
-	const favoriteMessage = {
-		id: `${chatId}_${messageData.messageId}_${Date.now()}`, // Unique ID
-		chatId: chatId,
-		messageId: messageData.messageId,
-		messageText: messageData.messageText.substring(0, 200), // Truncate for display
-		fullMessageText: messageData.messageText,
-		timestamp: Date.now(),
-		characterName: characterName,
-		userName: messageData.userName || 'User',
-		isUser: messageData.isUser || false,
-	};
-
-	// Check if already favorited
-	const exists = settings.favoriteMessages.find(
-		(fav) => fav.chatId === chatId && fav.messageId === messageData.messageId,
-	);
-	if (exists) {
-		toastr['info'](t`Message is already in favorites`);
-		return false;
-	}
-
-	settings.favoriteMessages.push(favoriteMessage);
-	await saveSettings();
-	toastr['success'](t`Message added to favorites`);
-	return true;
-}
-
-/**
- * Remove a message from favorites
- */
-async function removeMessageFromFavorites(chatId, messageId) {
-	const initialLength = settings.favoriteMessages.length;
-	settings.favoriteMessages = settings.favoriteMessages.filter(
-		(fav) => !(fav.chatId === chatId && fav.messageId === messageId),
-	);
-	if (settings.favoriteMessages.length < initialLength) {
-		await saveSettings();
-		toastr['success'](t`Message removed from favorites`);
-		return true;
-	}
-	return false;
-}
-
-/**
- * Check if a message is favorited
- */
-function isMessageFavorited(chatId, messageId) {
-	return settings.favoriteMessages.some(
-		(fav) => fav.chatId === chatId && fav.messageId === messageId,
-	);
-}
-
-/**
- * Add a chat file to favorites
- */
-async function addChatFileToFavorites(fileName, fileData = {}) {
-	const favoriteFile = {
-		id: `${fileName}_${Date.now()}`,
-		fileName: fileName,
-		lastModified: fileData.lastModified || Date.now(),
-		characterName: fileData.characterName || 'Unknown',
-		messageCount: fileData.messageCount || 0,
-		timestamp: Date.now(),
-	};
-
-	// Check if already favorited
-	const exists = settings.favoriteChatFiles.find((fav) => fav.fileName === fileName);
-	if (exists) {
-		toastr['info'](t`Chat file is already in favorites`);
-		return false;
-	}
-
-	settings.favoriteChatFiles.push(favoriteFile);
-	await saveSettings();
-	toastr['success'](t`Chat file added to favorites`);
-	return true;
-}
-
-/**
- * Remove a chat file from favorites
- */
-async function removeChatFileFromFavorites(fileName) {
-	const initialLength = settings.favoriteChatFiles.length;
-	settings.favoriteChatFiles = settings.favoriteChatFiles.filter(
-		(fav) => fav.fileName !== fileName,
-	);
-	if (settings.favoriteChatFiles.length < initialLength) {
-		await saveSettings();
-		toastr['success'](t`Chat file removed from favorites`);
-		return true;
-	}
-	return false;
-}
-
-/**
- * Check if a chat file is favorited
- */
-function isChatFileFavorited(fileName) {
-	return settings.favoriteChatFiles.some((fav) => fav.fileName === fileName);
-}
-
-/**
- * Create star button HTML
- */
-function createStarButton(isFavorited, className = '', title = '') {
-	const starIcon = isFavorited ? 'fa-solid fa-star' : 'fa-regular fa-star';
-	const starColor = isFavorited ? 'style="color: #ffd700;"' : '';
-	return `
-		<div title="${title}" class="mes_button favorite_button ${className} fa-solid ${starIcon}" ${starColor} data-i18n="[title]${title}">
-		</div>
-	`;
-}
-
-/**
- * Add star button to a message
+ * Add star button to a message element
  */
 function addStarButtonToMessage(messageId) {
-	const messageElement = $(`#chat .mes[mesid="${messageId}"]`);
-	if (messageElement.length === 0) return;
-	const messagesContainer = messageElement.find('.mes_buttons');
-	if (messagesContainer.length === 0) return;
-
-	// Check if star button already exists
-	if (messagesContainer.find('.favorite_button').length > 0) return;
-
-	const chatId = getCurrentChatId();
-	const isFavorited = isMessageFavorited(chatId, messageId);
-	const starButton = createStarButton(
-		isFavorited,
-		'message_favorite_button',
-		isFavorited ? 'Remove from favorites' : 'Add to favorites',
-	);
-
-	// Insert star button at the appropriate position
-	if (settings.starPosition === 'left') {
-		messagesContainer.find('.extraMesButtons').prepend(starButton);
-	} else {
-		messagesContainer.find('.extraMesButtons').append(starButton);
-	}
-
-	// Add click handler
-	messagesContainer
-		.find('.message_favorite_button')
-		.off('click')
-		.on('click', async function (e) {
-			e.stopPropagation();
-			const messageElement = $(this).closest('.mes');
-			const messageId = messageElement.attr('mesid');
-			const messageText = messageElement.find('.mes_text').text();
-			const isUser = messageElement.hasClass('is_user');
-			const userName = messageElement.find('.ch_name').text();
-			const chatId = getCurrentChatId();
-			const isFavorited = isMessageFavorited(chatId, messageId);
-
-			if (isFavorited) {
-				await removeMessageFromFavorites(chatId, messageId);
-				$(this).removeClass('fa-solid').addClass('fa-regular').attr('style', '');
-				$(this).attr('title', 'Add to favorites');
-			} else {
-				const messageData = {
-					messageId: messageId,
-					messageText: messageText,
-					isUser: isUser,
-					userName: userName,
-				};
-				await addMessageToFavorites(messageData);
-				$(this)
-					.removeClass('fa-regular')
-					.addClass('fa-solid')
-					.attr('style', 'color: #ffd700;');
-				$(this).attr('title', 'Remove from favorites');
-			}
-		});
-}
-
-/**
- * Add star buttons to all visible messages
- */
-function addStarButtonsToAllMessages() {
-	$('#chat .mes').each(function () {
-		const messageId = $(this).attr('mesid');
-		if (messageId) {
-			addStarButtonToMessage(messageId);
-		}
-	});
+    const messageElement = $(`#chat .mes[mesid="${messageId}"]`);
+    if (!messageElement.length) return;
+    
+    const mesButtons = messageElement.find('.mes_buttons');
+    if (!mesButtons.length) return;
+    
+    // Check if star button already exists
+    if (mesButtons.find('.mes_favorite').length > 0) return;
+    
+    // Get message data
+    const chat = getContext().chat;
+    const messageData = chat[messageId];
+    if (!messageData) return;
+    
+    // Check if message is favorited
+    const isFavorited = isMessageFavorited(messageId);
+    
+    // Create star button
+    const starButton = $(`
+        <div title="${isFavorited ? 'Remove from favorites' : 'Add to favorites'}" 
+             class="mes_button mes_favorite fa-${isFavorited ? 'solid' : 'regular'} fa-star" 
+             data-i18n="[title]${isFavorited ? 'Remove from favorites' : 'Add to favorites'}"
+             data-message-id="${messageId}">
+        </div>
+    `);
+    
+    // Add click handler
+    starButton.on('click', function(e) {
+        e.stopPropagation();
+        toggleMessageFavorite(messageId);
+    });
+    
+    // Insert star button before the edit button
+    const editButton = mesButtons.find('.mes_edit');
+    if (editButton.length > 0) {
+        starButton.insertBefore(editButton);
+    } else {
+        // Fallback: add to end of mes_buttons
+        mesButtons.append(starButton);
+    }
 }
 
 /**
  * Add star button to chat file in selection interface
  */
-function addStarButtonToChatFiles() {
-	$('.select_chat_block_wrapper').each(function () {
-		const fileWrapper = $(this);
-		const renameChatButton = fileWrapper.find('.renameChatButton');
-
-		// Check if star button already exists
-		if (fileWrapper.find('.chat_favorite_button').length > 0) return;
-
-		const fileName = fileWrapper.find('.select_chat_block').attr('file_name');
-		if (!fileName) return;
-
-		const isFavorited = isChatFileFavorited(fileName);
-		const starButton = createStarButton(
-			isFavorited,
-			'chat_favorite_button',
-			isFavorited ? 'Remove chat from favorites' : 'Add chat to favorites',
-		);
-
-		// Insert star button after rename button
-		renameChatButton.after(starButton);
-
-		// Add click handler
-		fileWrapper
-			.find('.chat_favorite_button')
-			.off('click')
-			.on('click', async function (e) {
-				e.stopPropagation();
-				const fileName = $(this)
-					.closest('.select_chat_block_wrapper')
-					.find('.select_chat_block')
-					.attr('file_name');
-				const characterName = $(this)
-					.closest('.select_chat_block_wrapper')
-					.find('.select_chat_block_filename')
-					.text();
-				const messageCount = $(this)
-					.closest('.select_chat_block_wrapper')
-					.find('.chat_messages_num')
-					.text();
-				const isFavorited = isChatFileFavorited(fileName);
-
-				if (isFavorited) {
-					await removeChatFileFromFavorites(fileName);
-					$(this).removeClass('fa-solid').addClass('fa-regular').attr('style', '');
-					$(this).attr('title', 'Add chat to favorites');
-				} else {
-					const fileData = {
-						characterName: characterName,
-						messageCount: parseInt(messageCount) || 0,
-					};
-					await addChatFileToFavorites(fileName, fileData);
-					$(this)
-						.removeClass('fa-regular')
-						.addClass('fa-solid')
-						.attr('style', 'color: #ffd700;');
-					$(this).attr('title', 'Remove chat from favorites');
-				}
-			});
-	});
+function addStarButtonToChatFile() {
+    $('.select_chat_block_wrapper').each(function() {
+        const wrapper = $(this);
+        const filename = wrapper.find('.select_chat_block').attr('file_name');
+        
+        if (!filename || wrapper.find('.favoriteChatButton').length > 0) return;
+        
+        const isFavorited = isChatFileFavorited(filename);
+        
+        // Create star button
+        const starButton = $(`
+            <div title="${isFavorited ? 'Remove from favorites' : 'Add to favorites'}" 
+                 class="favoriteChatButton hoverglow opacity50p fa-${isFavorited ? 'solid' : 'regular'} fa-star fa-sm" 
+                 data-i18n="[title]${isFavorited ? 'Remove from favorites' : 'Add to favorites'}"
+                 data-filename="${filename}">
+            </div>
+        `);
+        
+        // Add click handler
+        starButton.on('click', function(e) {
+            e.stopPropagation();
+            toggleChatFileFavorite(filename);
+        });
+        
+        // Insert after rename button
+        const renameButton = wrapper.find('.renameChatButton');
+        if (renameButton.length > 0) {
+            starButton.insertAfter(renameButton);
+        }
+    });
 }
 
 /**
- * Show favorites window
+ * Check if a message is favorited
  */
-async function showFavoritesWindow() {
-	const favoritesTemplate = `
-		<div class="favorites_window">
-			<div class="favorites_tabs">
-				<div class="favorites_tab active" data-tab="messages">
-					<i class="fa-solid fa-message"></i> Favorite Messages
-				</div>
-				<div class="favorites_tab" data-tab="chatfiles">
-					<i class="fa-solid fa-file"></i> Favorite Chat Files
-				</div>
-			</div>
-			<div class="favorites_content">
-				<div id="favorites_messages" class="favorites_tab_content active">
-					<div class="favorites_list">
-						${
-							settings.favoriteMessages.length === 0
-								? '<div class="no_favorites">No favorite messages yet</div>'
-								: settings.favoriteMessages
-										.map(
-											(msg) => `
-							<div class="favorite_item" data-chat-id="${msg.chatId}" data-message-id="${msg.messageId}">
-								<div class="favorite_header">
-									<strong>${msg.characterName}</strong>
-									<span class="favorite_date">${new Date(
-										msg.timestamp,
-									).toLocaleDateString()}</span>
-									<button class="remove_favorite" data-type="message" data-id="${msg.id}">
-										<i class="fa-solid fa-trash"></i>
-									</button>
-								</div>
-								<div class="favorite_text">${msg.messageText}${
-									msg.messageText.length >= 200 ? '...' : ''
-								}</div>
-							</div>
-						`,
-										)
-										.join('')
-						}
-					</div>
-				</div>
-				<div id="favorites_chatfiles" class="favorites_tab_content">
-					<div class="favorites_list">
-						${
-							settings.favoriteChatFiles.length === 0
-								? '<div class="no_favorites">No favorite chat files yet</div>'
-								: settings.favoriteChatFiles
-										.map(
-											(file) => `
-							<div class="favorite_item" data-file-name="${file.fileName}">
-								<div class="favorite_header">
-									<strong>${file.fileName}</strong>
-									<span class="favorite_date">${new Date(
-										file.timestamp,
-									).toLocaleDateString()}</span>
-									<button class="remove_favorite" data-type="chatfile" data-id="${file.id}">
-										<i class="fa-solid fa-trash"></i>
-									</button>
-								</div>
-								<div class="favorite_details">
-									Character: ${file.characterName} | Messages: ${file.messageCount}
-								</div>
-							</div>
-						`,
-										)
-										.join('')
-						}
-					</div>
-				</div>
-			</div>
-		</div>
-	`;
-
-	const result = await callGenericPopup(favoritesTemplate, POPUP_TYPE.TEXT, '', {
-		wide: true,
-		large: true,
-		allowHorizontalScrolling: false,
-		allowVerticalScrolling: true,
-		okButton: 'Close',
-		cancelButton: false,
-	});
-
-	// Add event handlers for the popup
-	$('.favorites_tab')
-		.off('click')
-		.on('click', function () {
-			const tab = $(this).data('tab');
-			$('.favorites_tab').removeClass('active');
-			$('.favorites_tab_content').removeClass('active');
-			$(this).addClass('active');
-			$(`#favorites_${tab}`).addClass('active');
-		});
-
-	$('.remove_favorite')
-		.off('click')
-		.on('click', async function () {
-			const type = $(this).data('type');
-			const id = $(this).data('id');
-
-			if (type === 'message') {
-				settings.favoriteMessages = settings.favoriteMessages.filter(
-					(msg) => msg.id !== id,
-				);
-			} else if (type === 'chatfile') {
-				settings.favoriteChatFiles = settings.favoriteChatFiles.filter(
-					(file) => file.id !== id,
-				);
-			}
-
-			await saveSettings();
-			$(this).closest('.favorite_item').remove();
-
-			// Update star buttons in the current view
-			addStarButtonsToAllMessages();
-			addStarButtonToChatFiles();
-		});
+function isMessageFavorited(messageId) {
+    const context = getContext();
+    const currentChatId = context.chatId;
+    
+    return settings.favoriteMessages.some(fav => 
+        fav.chatId === currentChatId && fav.messageId === messageId
+    );
 }
 
 /**
- * Add favorites button to extensions menu
+ * Check if a chat file is favorited
  */
-function addFavoritesMenuButton() {
-	const favoritesButton = `
-		<div id="favorites_menu_button" class="list-group-item flex-container flexGap5">
-			<div class="fa-solid fa-star extensionsMenuExtensionIcon"></div>
-			<span>Favorites</span>
-		</div>
-	`;
-
-	// Add to extensions menu
-	$('#extensionsMenu').append(favoritesButton);
-
-	// Add click handler
-	$('#favorites_menu_button')
-		.off('click')
-		.on('click', function () {
-			showFavoritesWindow();
-		});
+function isChatFileFavorited(filename) {
+    return settings.favoriteChatFiles.some(fav => fav.filename === filename);
 }
 
 /**
- * Initialize the extension
+ * Toggle message favorite status
  */
-function init() {
-	console.log(`[${EXTENSION_NAME}] Initializing...`);
-
-	// Initialize settings
-	initializeSettings();
-
-	// Add favorites menu button
-	addFavoritesMenuButton();
-
-	// Add event listeners for message rendering
-	eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
-		setTimeout(() => addStarButtonToMessage(messageId), 100);
-	});
-	eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-		setTimeout(() => addStarButtonToMessage(messageId), 100);
-	});
-
-	// Add star buttons to existing messages when chat loads
-	eventSource.on(event_types.CHAT_CHANGED, () => {
-		setTimeout(() => {
-			addStarButtonsToAllMessages();
-		}, 500);
-	});
-
-	// Add star buttons to chat files when the selection interface is shown
-	// We'll use a MutationObserver to detect when chat selection UI is loaded
-	const observer = new MutationObserver((mutations) => {
-		mutations.forEach((mutation) => {
-			mutation.addedNodes.forEach((node) => {
-				if (node.nodeType === Node.ELEMENT_NODE) {
-					const chatBlocks = $(node).find('.select_chat_block_wrapper');
-					if (chatBlocks.length > 0) {
-						setTimeout(() => addStarButtonToChatFiles(), 100);
-					}
-				}
-			});
-		});
-	});
-
-	// Start observing
-	observer.observe(document.body, { childList: true, subtree: true });
-
-	console.log(`[${EXTENSION_NAME}] Initialized successfully`);
+function toggleMessageFavorite(messageId) {
+    const context = getContext();
+    const currentChatId = context.chatId;
+    const chat = context.chat;
+    const messageData = chat[messageId];
+    
+    if (!messageData) return;
+    
+    const favoriteIndex = settings.favoriteMessages.findIndex(fav => 
+        fav.chatId === currentChatId && fav.messageId === messageId
+    );
+    
+    if (favoriteIndex >= 0) {
+        // Remove from favorites
+        settings.favoriteMessages.splice(favoriteIndex, 1);
+        updateMessageStarButton(messageId, false);
+        console.log('Message removed from favorites:', messageId);
+    } else {
+        // Add to favorites
+        const favoriteMessage = {
+            chatId: currentChatId,
+            messageId: messageId,
+            content: messageData.mes || '',
+            character: messageData.name || '',
+            timestamp: Date.now()
+        };
+        
+        settings.favoriteMessages.push(favoriteMessage);
+        updateMessageStarButton(messageId, true);
+        console.log('Message added to favorites:', messageId);
+    }
+    
+    saveSettings();
+    
+    // Update favorites window if open
+    if (favoritesWindow && !favoritesWindow.is(':hidden')) {
+        refreshFavoritesWindow();
+    }
 }
 
-// Initialize when DOM is ready
-jQuery(() => {
-	init();
-});
+/**
+ * Toggle chat file favorite status
+ */
+function toggleChatFileFavorite(filename) {
+    const favoriteIndex = settings.favoriteChatFiles.findIndex(fav => fav.filename === filename);
+    
+    if (favoriteIndex >= 0) {
+        // Remove from favorites
+        settings.favoriteChatFiles.splice(favoriteIndex, 1);
+        updateChatFileStarButton(filename, false);
+        console.log('Chat file removed from favorites:', filename);
+    } else {
+        // Add to favorites
+        const favoriteChatFile = {
+            filename: filename,
+            timestamp: Date.now()
+        };
+        
+        settings.favoriteChatFiles.push(favoriteChatFile);
+        updateChatFileStarButton(filename, true);
+        console.log('Chat file added to favorites:', filename);
+    }
+    
+    saveSettings();
+    
+    // Update favorites window if open
+    if (favoritesWindow && !favoritesWindow.is(':hidden')) {
+        refreshFavoritesWindow();
+    }
+}
+
+/**
+ * Update message star button appearance
+ */
+function updateMessageStarButton(messageId, isFavorited) {
+    const starButton = $(`.mes_favorite[data-message-id="${messageId}"]`);
+    if (starButton.length === 0) return;
+    
+    starButton
+        .removeClass('fa-solid fa-regular')
+        .addClass(isFavorited ? 'fa-solid' : 'fa-regular')
+        .attr('title', isFavorited ? 'Remove from favorites' : 'Add to favorites')
+        .attr('data-i18n', `[title]${isFavorited ? 'Remove from favorites' : 'Add to favorites'}`);
+}
+
+/**
+ * Update chat file star button appearance
+ */
+function updateChatFileStarButton(filename, isFavorited) {
+    const starButton = $(`.favoriteChatButton[data-filename="${filename}"]`);
+    if (starButton.length === 0) return;
+    
+    starButton
+        .removeClass('fa-solid fa-regular')
+        .addClass(isFavorited ? 'fa-solid' : 'fa-regular')
+        .attr('title', isFavorited ? 'Remove from favorites' : 'Add to favorites')
+        .attr('data-i18n', `[title]${isFavorited ? 'Remove from favorites' : 'Add to favorites'}`);
+}
+
+/**
+ * Create and show favorites window
+ */
+function showFavoritesWindow() {
+    if (favoritesWindow && !favoritesWindow.is(':hidden')) {
+        favoritesWindow.focus();
+        return;
+    }
+    
+    createFavoritesWindow();
+    favoritesWindow.show();
+    refreshFavoritesWindow();
+}
+
+/**
+ * Create the favorites window HTML
+ */
+function createFavoritesWindow() {
+    if (favoritesWindow) {
+        favoritesWindow.remove();
+    }
+    
+    favoritesWindow = $(`
+        <div id="favoritesWindow" class="popup-background" style="display: none;">
+            <div class="popup-content">
+                <div class="popup-header">
+                    <h3>Favorites</h3>
+                    <button id="favoritesWindowClose" class="close-button">×</button>
+                </div>
+                <div class="popup-body">
+                    <div class="favorites-tabs">
+                        <button class="favorites-tab ${settings.activeTab === 'messages' ? 'active' : ''}" data-tab="messages">
+                            Favorite Messages
+                        </button>
+                        <button class="favorites-tab ${settings.activeTab === 'chatfiles' ? 'active' : ''}" data-tab="chatfiles">
+                            Favorite Chat Files
+                        </button>
+                    </div>
+                    <div class="favorites-content">
+                        <div id="favoritesMessagesTab" class="favorites-tab-content ${settings.activeTab === 'messages' ? 'active' : ''}">
+                            <div class="favorites-list" id="favoriteMessagesList"></div>
+                        </div>
+                        <div id="favoritesChatFilesTab" class="favorites-tab-content ${settings.activeTab === 'chatfiles' ? 'active' : ''}">
+                            <div class="favorites-list" id="favoriteChatFilesList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `);
+    
+    $('body').append(favoritesWindow);
+    
+    // Add event handlers
+    favoritesWindow.find('#favoritesWindowClose').on('click', () => {
+        favoritesWindow.hide();
+    });
+    
+    favoritesWindow.find('.favorites-tab').on('click', function() {
+        const tab = $(this).data('tab');
+        switchFavoritesTab(tab);
+    });
+    
+    // Close on background click
+    favoritesWindow.on('click', function(e) {
+        if (e.target === this) {
+            favoritesWindow.hide();
+        }
+    });
+}
+
+/**
+ * Switch between favorites tabs
+ */
+function switchFavoritesTab(tab) {
+    settings.activeTab = tab;
+    saveSettings();
+    
+    // Update tab buttons
+    favoritesWindow.find('.favorites-tab').removeClass('active');
+    favoritesWindow.find(`.favorites-tab[data-tab="${tab}"]`).addClass('active');
+    
+    // Update tab content
+    favoritesWindow.find('.favorites-tab-content').removeClass('active');
+    favoritesWindow.find(`#favorites${tab === 'messages' ? 'Messages' : 'ChatFiles'}Tab`).addClass('active');
+    
+    refreshFavoritesWindow();
+}
+
+/**
+ * Refresh favorites window content
+ */
+function refreshFavoritesWindow() {
+    if (!favoritesWindow || favoritesWindow.is(':hidden')) return;
+    
+    if (settings.activeTab === 'messages') {
+        refreshFavoriteMessagesList();
+    } else {
+        refreshFavoriteChatFilesList();
+    }
+}
+
+/**
+ * Refresh favorite messages list
+ */
+function refreshFavoriteMessagesList() {
+    const messagesList = favoritesWindow.find('#favoriteMessagesList');
+    messagesList.empty();
+    
+    if (settings.favoriteMessages.length === 0) {
+        messagesList.append('<div class="no-favorites">No favorite messages yet</div>');
+        return;
+    }
+    
+    // Sort by timestamp (newest first)
+    const sortedMessages = [...settings.favoriteMessages].sort((a, b) => b.timestamp - a.timestamp);
+    
+    sortedMessages.forEach(fav => {
+        const messageItem = $(`
+            <div class="favorite-item message-item" data-chat-id="${fav.chatId}" data-message-id="${fav.messageId}">
+                <div class="favorite-content">
+                    <div class="favorite-meta">
+                        <span class="favorite-character">${fav.character || 'Unknown'}</span>
+                        <span class="favorite-timestamp">${new Date(fav.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="favorite-text">${fav.content.substring(0, 200)}${fav.content.length > 200 ? '...' : ''}</div>
+                </div>
+                <div class="favorite-actions">
+                    <button class="favorite-action-btn jump-to-message" title="Jump to message">
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    <button class="favorite-action-btn remove-favorite" title="Remove from favorites">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `);
+        
+        messagesList.append(messageItem);
+    });
+    
+    // Add event handlers for favorite actions
+    messagesList.find('.jump-to-message').on('click', function() {
+        const chatId = $(this).closest('.favorite-item').data('chat-id');
+        const messageId = $(this).closest('.favorite-item').data('message-id');
+        jumpToMessage(chatId, messageId);
+    });
+    
+    messagesList.find('.remove-favorite').on('click', function() {
+        const chatId = $(this).closest('.favorite-item').data('chat-id');
+        const messageId = $(this).closest('.favorite-item').data('message-id');
+        removeFavoriteMessage(chatId, messageId);
+    });
+}
+
+/**
+ * Refresh favorite chat files list
+ */
+function refreshFavoriteChatFilesList() {
+    const chatFilesList = favoritesWindow.find('#favoriteChatFilesList');
+    chatFilesList.empty();
+    
+    if (settings.favoriteChatFiles.length === 0) {
+        chatFilesList.append('<div class="no-favorites">No favorite chat files yet</div>');
+        return;
+    }
+    
+    // Sort by timestamp (newest first)
+    const sortedFiles = [...settings.favoriteChatFiles].sort((a, b) => b.timestamp - a.timestamp);
+    
+    sortedFiles.forEach(fav => {
+        const fileItem = $(`
+            <div class="favorite-item file-item" data-filename="${fav.filename}">
+                <div class="favorite-content">
+                    <div class="favorite-filename">${fav.filename}</div>
+                    <div class="favorite-timestamp">${new Date(fav.timestamp).toLocaleString()}</div>
+                </div>
+                <div class="favorite-actions">
+                    <button class="favorite-action-btn open-chat" title="Open chat">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </button>
+                    <button class="favorite-action-btn remove-favorite" title="Remove from favorites">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `);
+        
+        chatFilesList.append(fileItem);
+    });
+    
+    // Add event handlers for favorite actions
+    chatFilesList.find('.open-chat').on('click', function() {
+        const filename = $(this).closest('.favorite-item').data('filename');
+        openChatFile(filename);
+    });
+    
+    chatFilesList.find('.remove-favorite').on('click', function() {
+        const filename = $(this).closest('.favorite-item').data('filename');
+        removeFavoriteChatFile(filename);
+    });
+}
+
+/**
+ * Jump to a specific message in a chat
+ */
+function jumpToMessage(chatId, messageId) {
+    // Implementation depends on SillyTavern's chat loading mechanism
+    // This would need to be integrated with the chat loading system
+    console.log('Jump to message:', chatId, messageId);
+    favoritesWindow.hide();
+}
+
+/**
+ * Open a specific chat file
+ */
+function openChatFile(filename) {
+    // Trigger chat file selection
+    $(`.select_chat_block[file_name="${filename}"]`).trigger('click');
+    favoritesWindow.hide();
+}
+
+/**
+ * Remove favorite message
+ */
+function removeFavoriteMessage(chatId, messageId) {
+    const index = settings.favoriteMessages.findIndex(fav => 
+        fav.chatId === chatId && fav.messageId === messageId
+    );
+    
+    if (index >= 0) {
+        settings.favoriteMessages.splice(index, 1);
+        saveSettings();
+        refreshFavoriteMessagesList();
+        
+        // Update star button if visible
+        updateMessageStarButton(messageId, false);
+    }
+}
+
+/**
+ * Remove favorite chat file
+ */
+function removeFavoriteChatFile(filename) {
+    const index = settings.favoriteChatFiles.findIndex(fav => fav.filename === filename);
+    
+    if (index >= 0) {
+        settings.favoriteChatFiles.splice(index, 1);
+        saveSettings();
+        refreshFavoriteChatFilesList();
+        
+        // Update star button if visible
+        updateChatFileStarButton(filename, false);
+    }
+}
+
+/**
+ * Add favorites menu item to extensions menu
+ */
+function addFavoritesMenuItem() {
+    // Create menu container for favorites
+    const menuContainer = $(`
+        <div id="favorites_wand_container" class="extension_container">
+            <div class="extension_menu_button" data-i18n="Favorites" title="Open Favorites">
+                <i class="fa-solid fa-star"></i>
+                <span>Favorites</span>
+            </div>
+        </div>
+    `);
+    
+    // Add click handler
+    menuContainer.find('.extension_menu_button').on('click', showFavoritesWindow);
+    
+    // Add to extensions menu
+    $('#extensionsMenu').append(menuContainer);
+    
+    console.log('Favorites menu item added to extensions menu');
+}
+
+/**
+ * Main extension initialization
+ */
+function initializeFavoritesExtension() {
+    console.log('Initializing Favorites extension...');
+    
+    // Initialize settings
+    initializeSettings();
+    
+    if (!settings.enabled) {
+        console.log('Favorites extension is disabled');
+        return;
+    }
+    
+    // Add event listeners for message rendering
+    eventSource.on(event_types.USER_MESSAGE_RENDERED, addStarButtonToMessage);
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, addStarButtonToMessage);
+    
+    // Add event listener for chat changes to update chat file buttons
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        setTimeout(addStarButtonToChatFile, 100); // Small delay to ensure DOM is updated
+    });
+    
+    // Periodically check for new chat files in selection interface
+    setInterval(addStarButtonToChatFile, 1000);
+    
+    // Add menu item to extensions menu
+    addFavoritesMenuItem();
+    
+    console.log('Favorites extension initialized successfully');
+}
+
+// jQuery entry point for extension system
+export default function() {
+    // Wait for DOM to be ready
+    $(document).ready(() => {
+        initializeFavoritesExtension();
+    });
+    
+    // Return functions that can be called from extension menu
+    return {
+        showFavorites: showFavoritesWindow
+    };
+}
+
+// Auto-initialize when module loads
+initializeFavoritesExtension();
