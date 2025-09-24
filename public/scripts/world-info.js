@@ -26,20 +26,21 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Xavier"],
+    "default-user":["#hidden#-Xavier", "#hidden#-meows"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
-        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", "bb-hailey-Jett"
+        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", "bb-hailey-Jett", "bb-hailey-Elias"
     ],
-    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu"],
+    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan"],
     "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"],
     "ravenh":["bb-ravenh-Ryker"],
+    "romarinpng":["bb-romarinpng-kaito"],
 };
 
 
