@@ -750,10 +750,9 @@ function getStyleContentsFromMarkdown(text) {
         return '';
     }
 
-    const div = document.createElement('div');
     const html = converter.makeHtml(substituteParams(text));
-    div.innerHTML = html;
-    const styleElements = Array.from(div.querySelectorAll('style'));
+    const parsedDocument = new DOMParser().parseFromString(html, 'text/html');
+    const styleElements = Array.from(parsedDocument.querySelectorAll('style'));
     return styleElements
         .filter(s => s.textContent.trim().length > 0)
         .map(s => s.textContent.trim())
@@ -1758,7 +1757,34 @@ export function addDOMPurifyHooks() {
 
         // Replace line breaks with <br> in unknown elements
         if (node instanceof HTMLUnknownElement) {
-            node.innerHTML = node.innerHTML.trim().replaceAll('\n', '<br>');
+            node.innerHTML = node.innerHTML.trim();
+
+            /** @type {Text[]} */
+            const candidates = [];
+            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const textNode = /** @type {Text} */ (walker.currentNode);
+                if (!textNode.data.includes('\n')) continue;
+
+                // Skip if this text node is within a <pre> (any ancestor)
+                if (textNode.parentElement && textNode.parentElement.closest('pre')) continue;
+
+                candidates.push(textNode);
+            }
+
+            for (const textNode of candidates) {
+                const parts = textNode.data.split('\n');
+                const frag = document.createDocumentFragment();
+                parts.forEach((part, idx) => {
+                    if (part.length) {
+                        frag.appendChild(document.createTextNode(part));
+                    }
+                    if (idx < parts.length - 1) {
+                        frag.appendChild(document.createElement('br'));
+                    }
+                });
+                textNode.replaceWith(frag);
+            }
         }
 
         const isMediaAllowed = isExternalMediaAllowed();
