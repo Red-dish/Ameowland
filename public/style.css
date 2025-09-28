@@ -13,7 +13,7 @@
 @import url(css/welcome.css);
 @import url(css/data-maid.css);
 @import url(css/secrets.css);
-@import url(css/backgrounds.css);
+@import url(css/world-info.css);
 
 :root {
     interpolate-size: allow-keywords;
@@ -59,6 +59,19 @@
 
     --interactable-outline-color: var(--white100);
     --interactable-outline-color-faint: var(--white20a);
+
+    .select_chat_block.bulk-mode-readonly {  
+        opacity: 0.7;  
+        cursor: default !important;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode {  
+        cursor: pointer;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode:hover {  
+        background-color: rgba(255, 255, 255, 0.1);  
+    }
 
     --reasoning-body-color: var(--SmartThemeEmColor);
     --reasoning-em-color: color-mix(in srgb, var(--SmartThemeEmColor) 67%, var(--SmartThemeBlurTintColor) 33%);
@@ -296,11 +309,6 @@ table.responsiveTable {
     outline: 1px solid var(--interactable-outline-color);
 }
 
-/* Prevent the outline from being cut off by hiding the overflow */
-.tag.interactable:focus-visible {
-    outline-offset: -1px;
-}
-
 /* The specific input controls can always have a faint outline, even on mouse interaction, to give a better hint */
 select:focus-visible,
 input:focus-visible,
@@ -339,6 +347,16 @@ input[type='checkbox']:focus-visible {
     overflow: hidden;
 }
 
+#spoiler_free_desc_button{
+    margin-right: 1em;
+    opacity: 0.00;
+    transition: 200ms;
+            &:hover {
+        opacity: 1;
+        filter: saturate(1.0);
+        }
+}
+
 .fa-solid::before,
 .fa-regular::before {
     vertical-align: middle;
@@ -351,9 +369,8 @@ input[type='checkbox']:focus-visible {
 }
 
 .text_muted {
-    font-size: calc(var(--mainFontSize) - 0.2em);
-    color: var(--SmartThemeBodyColor);
-    opacity: 0.7;
+    font-size: calc(var(--mainFontSize) - 0.2rem);
+    color: var(--white50a);
 }
 
 .mes[is_system="true"][ch_name="SillyTavern System"] .mes_text br {
@@ -722,9 +739,69 @@ hr {
     opacity: 0.2;
 }
 
+#bg1,
+#bg_custom {
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-size: cover;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transition: background-image var(--animation-duration-3x) ease-in-out;
+}
+
+/* Background fitting options */
+#background_fitting {
+    max-width: 6em;
+}
+
+/* Fill/Cover - scales to fill width while maintaining aspect ratio */
+#bg1.cover,
+#bg_custom.cover {
+    background-size: cover;
+    background-position: center;
+}
+
+/* Fit/Contain - shows entire image maintaining aspect ratio */
+#bg1.contain,
+#bg_custom.contain {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Stretch - stretches to fill entire space */
+#bg1.stretch,
+#bg_custom.stretch {
+    background-size: 100% 100%;
+}
+
+/* Center - centers without scaling */
+#bg1.center,
+#bg_custom.center {
+    background-size: auto;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+body.reduced-motion #bg1,
+body.reduced-motion #bg_custom {
+    transition: none;
+}
+
 #version_display {
     padding: 5px;
     opacity: 0.8;
+}
+
+#bg1 {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+    z-index: -3;
+}
+
+#bg_custom {
+    background-image: none;
+    z-index: -2;
 }
 
 /*TOPPER margin*/
@@ -1369,6 +1446,61 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     flex-wrap: wrap;
     overflow: hidden;
     max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+}
+
+/* --- Quick Character Selection ---  */
+#HotSwapWrapper .hotswap.avatars_inline {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    justify-content: center;
+    scroll-behavior: smooth;
+    max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
+    -ms-overflow-style: none;
+    margin: 5px;
+    margin-right: 10px;
+    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+
+    *:focus {
+        outline: none;
+    }
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+
+    @media screen and (max-width: 1000px) {
+        margin-right: 0;
+        justify-content: flex-start;
+    }
+}
+
+/* when using big avatars, increase the collapsed height */
+body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
+    max-height: calc(var(--avatar-base-width) * var(--big-avatar-width-factor) + 35px)
+}
+
+#HotSwapWrapper:hover .hotswap.avatars_inline {
+    /* you can tweak this 25dvh value as needed! */
+    max-height: 25dvh !important;
+    overflow: auto;
+    transition: all 1s cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    @media screen and (max-width: 1000px) {
+        /* you can tweak this 30dvh value as needed! */
+        max-height: 30dvh !important;
+    }
+}
+
+#HotSwapWrapper:not(:hover) .hotswap.avatars_inline {
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Continue with remaining styles */
+.avatars_inline_small .avatar,
+.avatars_inline_small .avatar img {
+    width: calc(var(--avatar-base-width) * var(--inline-avatar-small-factor));
+    height: calc(var(--avatar-base-height) * var(--inline-avatar-small-factor));
 }
 
 .bogus_folder_select .avatar {
@@ -2482,11 +2614,7 @@ textarea::placeholder {
 #creator_notes_spoiler {
     border: 0;
     font-size: calc(var(--mainFontSize)*.8);
-    padding: 5px 0;
-}
-
-#creator_notes_spoiler p:last-child {
-    margin-bottom: 0;
+    padding-top: 5px;
 }
 
 @media screen and (max-width: 1000px) {
@@ -2940,7 +3068,6 @@ select option:not(:checked) {
     text-align: center;
 }
 
-.menu_button[disabled],
 .menu_button.disabled {
     filter: brightness(75%) grayscale(1);
     opacity: 0.5;
@@ -3240,10 +3367,121 @@ input[type=search]:focus::-webkit-search-cancel-button {
 .bg_list {
     display: flex;
     flex-wrap: wrap;
-    width: calc(var(--sheldWidth) - 15px);
+    width: calc(var(--sheldWidth) - 10px);
     max-width: 100vw;
     max-width: 100dvw;
     justify-content: space-evenly;
+}
+
+.bg_example {
+    width: 30%;
+    max-width: 200px;
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    box-shadow: 0 0 7px var(--black50a);
+    margin: 5px;
+    cursor: pointer;
+    aspect-ratio: 16/9;
+    justify-content: flex-end;
+    position: relative;
+}
+
+.bg_example.locked {
+    outline: 2px solid var(--golden);
+}
+
+.bg_example:hover.locked .bg_example_lock,
+.bg_example:focus-within.locked .bg_example_lock {
+    display: none;
+}
+
+.bg_example:hover:not(.locked) .bg_example_unlock,
+.bg_example:focus-within:not(.locked) .bg_example_unlock {
+    display: none;
+}
+
+.bg_example:hover[custom="true"] .bg_example_edit,
+.bg_example:focus-within[custom="true"] .bg_example_edit {
+    display: none;
+}
+
+.bg_example:hover[custom="false"] .bg_example_copy,
+.bg_example:focus-within[custom="false"] .bg_example_copy {
+    display: none;
+}
+
+.BGSampleTitle {
+    display: flex;
+    width: 100%;
+    height: min-content;
+    text-align: center;
+    justify-content: center;
+    align-self: flex-end;
+    bottom: 0;
+    position: relative;
+    word-break: break-word;
+    background-color: var(--SmartThemeBlurTintColor);
+    font-size: calc(var(--fontScale) * 0.9em);
+    max-height: 50%;
+    overflow-y: clip;
+    border-radius: 0 0 7px 7px;
+}
+
+.bg_example[custom="true"] .BGSampleTitle {
+    display: none;
+}
+
+.bg_button {
+    padding: 4px;
+    position: absolute;
+    top: 5px;
+    cursor: pointer;
+    opacity: 0.8;
+    border-radius: 3px;
+    font-size: 20px;
+    color: var(--black70a);
+    text-shadow: none;
+    margin: 0;
+    filter: drop-shadow(0px 0px 3px white);
+    transition: opacity var(--animation-duration-2x) ease-in-out;
+    display: none;
+}
+
+.bg_example:hover .bg_button,
+.bg_example:focus-within .bg_button {
+    display: block;
+}
+
+.bg_button:hover {
+    opacity: 1;
+}
+
+.bg_example_cross {
+    right: 6px;
+}
+
+.bg_example_edit {
+    left: 6px;
+}
+
+.bg_example_copy {
+    left: 6px;
+}
+
+.bg_example_lock,
+.bg_example_unlock {
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.add_bg_but {
+    cursor: pointer;
+    opacity: 0.1;
+    height: 100%;
+    width: 100%;
 }
 
 .input-file {
@@ -3422,20 +3660,12 @@ grammarly-extension {
     align-items: baseline;
 }
 
-#creator_notes_spoiler:empty,
-#creator_notes_empty,
 #creators_note_desc_hidden {
     display: none;
 }
 
-#creator_notes_spoiler:empty~#creator_notes_empty {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-    font-size: calc(var(--mainFontSize) * 0.9);
-    color: var(--SmartThemeEmColor);
+#creators_notes_div:has(#spoiler_free_desc_button.fa-eye-slash) #creators_note_desc_hidden {
+    display: initial;
 }
 
 .alternate_greeting details {
@@ -3676,8 +3906,8 @@ grammarly-extension {
     min-width: calc(1.25em + 12px);
 }
 
-.menu_button:not(.disabled):not([disabled]):hover,
-.menu_button:not(.disabled):not([disabled]).active {
+.menu_button:not(.disabled):hover,
+.menu_button:not(.disabled).active {
     background-color: var(--white30a);
 }
 
@@ -4028,6 +4258,14 @@ input[type='checkbox'].del_checkbox {
     display: flex;
 }
 
+.range-block label.checkbox_label span[data-i18n="Unlocked Context Size"] {
+    margin-bottom: 10px; 
+    display: block; /* block element to control margin/padding better */
+    font-size: 0.9em;
+    color: #9c96fa;
+    padding: 5px; 
+}
+
 .toggle-description {
     width: max-content;
     margin-left: 5px;
@@ -4353,7 +4591,6 @@ input[type="range"]::-webkit-slider-thumb {
 .mes_reasoning_actions {
     margin: 0;
     margin-top: 0.5em;
-    margin-bottom: 0.5em;
 }
 
 .mes_edit_buttons .menu_button,
@@ -4371,6 +4608,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .mes_reasoning_actions .edit_button {
+    margin-bottom: 0.5em;
     opacity: 1;
     filter: brightness(0.7);
 }
@@ -5265,6 +5503,18 @@ body:has(#character_popup.open) #top-settings-holder:has(.drawer-content.openDra
     padding: 5px 0;
     cursor: pointer;
 }
+
+#p-lb {
+    filter: saturate(0.5);
+margin-right: 1em;
+opacity: 0.25;
+transition: 200ms;
+        &:hover {
+    opacity: 1;
+    filter: saturate(1.0);
+    }
+}
+
 
 .inline-drawer-content {
     display: none;
