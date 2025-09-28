@@ -235,7 +235,7 @@ import {
 } from './scripts/personas.js';
 import { getBackgrounds, initBackgrounds, loadBackgroundSettings, background_settings } from './scripts/backgrounds.js';
 import { hideLoader, showLoader } from './scripts/loader.js';
-import { BulkEditOverlay } from './scripts/BulkEditOverlay.js';
+import { BulkEditOverlay, CharacterContextMenu, chatBulkManager } from './scripts/BulkEditOverlay.js';
 import { initTextGenModels } from './scripts/textgen-models.js';
 import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, decodeStyleTags, encodeStyleTags, isExternalMediaAllowed, preserveNeutralChat, restoreNeutralChat, formatCreatorNotes, initChatUtilities, addDOMPurifyHooks } from './scripts/chats.js';
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
@@ -1310,6 +1310,114 @@ export async function deleteCharacterChatByName(characterId, fileName) {
 
     await eventSource.emit(event_types.CHAT_DELETED, fileName);
 }
+
+
+/**
+ * Deletes multiple chat files for the current character in bulk.
+ * @param {string[]} chatFiles Array of chat file names (with .jsonl extension)
+ * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
+ */
+export async function bulkDelChat(chatFiles) {
+    if (!Array.isArray(chatFiles) || chatFiles.length === 0) {
+        console.warn('No chat files provided for bulk deletion');
+        return { success: [], failed: [], total: 0 };
+    }
+
+    const response = await fetch('/api/chats/delete/bulk', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            chatfiles: chatFiles,
+            avatar_url: characters[this_chid].avatar,
+        }),
+    });
+
+    if (!response.ok) {
+        console.error('Failed to bulk delete chats');
+        throw new Error('Bulk delete request failed');
+    }
+
+    const result = await response.json();
+    
+    // Check if current chat was deleted and switch to another one
+    const currentChatFile = `${characters[this_chid].chat}.jsonl`;
+    if (result.success.includes(currentChatFile)) {
+        chat_metadata = {};
+        await replaceCurrentChat();
+    }
+
+    // Emit events for successfully deleted chats
+    for (const deletedFile of result.success) {
+        const name = deletedFile.replace('.jsonl', '');
+        await eventSource.emit(event_types.CHAT_DELETED, name);
+    }
+
+    return result;
+}
+
+/**
+ * Deletes multiple character chats by their names for a specific character.
+ * @param {string} characterId Character ID to delete chats for
+ * @param {string[]} fileNames Array of chat file names to delete (without .jsonl extension)
+ * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
+ */
+export async function bulkDeleteCharacterChatsByName(characterId, fileNames) {
+    if (!Array.isArray(fileNames) || fileNames.length === 0) {
+        console.warn('No file names provided for bulk deletion');
+        return { success: [], failed: [], total: 0 };
+    }
+
+    // Make sure all the data is loaded.
+    await unshallowCharacter(characterId);
+
+    /** @type {import('./scripts/char-data.js').v1CharData} */
+    const character = characters[characterId];
+    if (!character) {
+        console.warn(`Character with ID ${characterId} not found.`);
+        throw new Error(`Character with ID ${characterId} not found`);
+    }
+
+    // Convert file names to include .jsonl extension
+    const chatFiles = fileNames.map(name => `${name}.jsonl`);
+
+    const response = await fetch('/api/chats/delete/bulk', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            chatfiles: chatFiles,
+            avatar_url: character.avatar,
+        }),
+    });
+
+    if (!response.ok) {
+        console.error('Failed to bulk delete chats for character.');
+        throw new Error('Bulk delete request failed');
+    }
+
+    const result = await response.json();
+
+    // Check if current chat was deleted and switch to another one
+    if (result.success.some(file => file.replace('.jsonl', '') === character.chat)) {
+        const chatsResponse = await fetch('/api/characters/chats', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ avatar_url: character.avatar }),
+        });
+        const chats = Object.values(await chatsResponse.json());
+        chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
+        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${humanizedDateTime()}`;
+        await updateRemoteChatName(characterId, newChatName);
+    }
+
+    // Emit events for successfully deleted chats
+    for (const deletedFile of result.success) {
+        const name = deletedFile.replace('.jsonl', '');
+        await eventSource.emit(event_types.CHAT_DELETED, name);
+    }
+
+    return result;
+}
+
 
 export async function replaceCurrentChat() {
     await clearChat();
@@ -5311,24 +5419,24 @@ function parseAndSaveLogprobs(data, continueFrom) {
  */
 export function extractMessageFromData(data, activeApi = null) {
     function getResult() {
-        if (typeof data === 'string') {
-            return data;
-        }
+    if (typeof data === 'string') {
+        return data;
+    }
 
-        switch (activeApi ?? main_api) {
-            case 'kobold':
-                return data.results[0].text;
-            case 'koboldhorde':
-                return data.text;
-            case 'textgenerationwebui':
+    switch (activeApi ?? main_api) {
+        case 'kobold':
+            return data.results[0].text;
+        case 'koboldhorde':
+            return data.text;
+        case 'textgenerationwebui':
                 return data.choices?.[0]?.text ?? data.choices?.[0]?.message?.content ?? data.content ?? data.response ?? '';
-            case 'novel':
-                return data.output;
-            case 'openai':
-                return data?.content?.find(p => p.type === 'text')?.text ?? data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? data?.text ?? data?.message?.content?.[0]?.text ?? data?.message?.tool_plan ?? '';
-            default:
-                return '';
-        }
+        case 'novel':
+            return data.output;
+        case 'openai':
+            return data?.content?.find(p => p.type === 'text')?.text ?? data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? data?.text ?? data?.message?.content?.[0]?.text ?? data?.message?.tool_plan ?? '';
+        default:
+            return '';
+    }
     }
 
     const result = getResult();
@@ -5550,7 +5658,7 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
         ];
         for (const seq of sequences.filter(s => s.apply)) {
             seq.value.split('\n').filter(line => line.trim() !== '').forEach(line => { getMessage = getMessage.replaceAll(line, ''); });
-        }
+    }
     }
 
     // clean-up group message from excessive generations
@@ -7310,6 +7418,10 @@ export async function displayPastChats() {
     }, 200);
 }
 
+    // Initialize bulk chat manager and reset state
+    chatBulkManager.initialize();
+    chatBulkManager.resetState();
+
 async function displayChats(searchQuery, currentChat, displayName, avatarImg, selected_group) {
     try {
         const trimExtension = (fileName) => String(fileName).replace('.jsonl', '');
@@ -8239,10 +8351,10 @@ function addAlternateGreeting(template, greeting, index, getArray, popup) {
     greetingBlock.find('.alternate_greeting_text')
         .attr('id', `alternate_greeting_${index}`)
         .on('input', async function () {
-            const value = $(this).val();
-            const array = getArray();
-            array[index] = value;
-        }).val(greeting);
+        const value = $(this).val();
+        const array = getArray();
+        array[index] = value;
+    }).val(greeting);
     greetingBlock.find('.editor_maximize').attr('data-for', `alternate_greeting_${index}`);
     greetingBlock.find('.greeting_index').text(index + 1);
     greetingBlock.find('.delete_alternate_greeting').on('click', async function (event) {
