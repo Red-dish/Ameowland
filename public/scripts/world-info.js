@@ -26,7 +26,7 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Xavier", "#hidden#-meows"],
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
@@ -2157,7 +2157,7 @@ export async function updateWorldInfoList() {
     if (result.ok) {
         const data = await result.json();
         const editorSelected = String($('#world_editor_select').find(':selected').text());
-        world_names = data.world_names?.length ? data.world_names : [];
+        world_names = filterWorldNames(data);
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -4676,7 +4676,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             let headerLogged = false;
             function log(...args) {
                 if (!headerLogged) {
-                    console.debug(`[WI] Entry ${entry.uid}`, `from '${entry.world}' processing`, entry);
+                    console.debug(`[WI] Entry ${entry.uid}`, `from '${entry.world}' processing`);
                     headerLogged = true;
                 }
                 console.debug(`[WI] Entry ${entry.uid}`, ...args);
@@ -4955,7 +4955,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             }
 
             allActivatedEntries.set(`${entry.world}.${entry.uid}`, entry);
-            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`, entry);
+            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`);
         }
 
         const successfulNewEntries = newEntries.filter(x => !failedProbabilityChecks.has(x));
@@ -4967,7 +4967,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         } else if (!successfulNewEntries.length) {
             console.debug('[WI] Probability checks failed for all activated entries. No new entries activated.');
         } else {
-            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`, successfulNewEntries);
+            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`);
         }
 
         function logNextState(...args) {
@@ -5047,7 +5047,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         const content = getRegexedString(entry.content, regex_placement.WORLD_INFO, { depth: regexDepth, isMarkdown: false, isPrompt: true });
 
         if (!content) {
-            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content', entry);
+            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content');
             return;
         }
 
@@ -5191,7 +5191,7 @@ function filterGroupsByTimedEffects(groups, timedEffects, removeEntry) {
                     continue;
                 }
 
-                console.debug(`[WI] Entry ${entry.uid}`, `removed as a non-sticky loser from inclusion group '${key}'`, entry);
+                console.debug(`[WI] Entry ${entry.uid}`, `removed as a non-sticky loser from inclusion group '${key}'`);
                 removeEntry(entry);
             }
 
@@ -5252,7 +5252,7 @@ function filterByInclusionGroups(newEntries, allActivatedEntries, buffer, scanSt
                 continue;
             }
 
-            if (logging) console.debug(`[WI] Entry ${entry.uid}`, `removed as loser from inclusion group '${entry.group}'`, entry);
+            if (logging) console.debug(`[WI] Entry ${entry.uid}`, `removed as loser from inclusion group '${entry.group}'`);
             removeEntry(entry);
         }
     }
@@ -5300,7 +5300,7 @@ function filterByInclusionGroups(newEntries, allActivatedEntries, buffer, scanSt
             currentWeight += (entry.groupWeight ?? DEFAULT_WEIGHT);
 
             if (rollValue <= currentWeight) {
-                console.debug(`[WI] Entry ${entry.uid}`, `activated as roll winner from inclusion group '${key}'`, entry);
+                console.debug(`[WI] Entry ${entry.uid}`, `activated as roll winner from inclusion group '${key}'`);
                 winner = entry;
                 break;
             }
