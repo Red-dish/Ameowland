@@ -114,4 +114,3 @@ function setAccessibilityObserver() {
 export function initAccessibility() {
     setAccessibilityObserver();
 }
-

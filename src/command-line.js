@@ -4,7 +4,7 @@ import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import ipRegex from 'ip-regex';
 import envPaths from 'env-paths';
-import { canResolve, color, getConfigValue, stringToBool } from './util.js';
+import { color, getConfigValue, stringToBool } from './util.js';
 import { initConfig } from './config-init.js';
 
 /**
@@ -27,6 +27,7 @@ import { initConfig } from './config-init.js';
  * @property {boolean} ssl If enable SSL
  * @property {string} certPath Path to certificate
  * @property {string} keyPath Path to private key
+ * @property {string} keyPassphrase SSL private key passphrase
  * @property {boolean} whitelistMode If enable whitelist mode
  * @property {boolean} basicAuthMode If enable basic authentication
  * @property {boolean} requestProxyEnabled If enable outgoing request proxy
@@ -49,8 +50,8 @@ export class CommandLineParser {
      */
     getDefaultConfig(isGlobal) {
         const appPaths = envPaths('SillyTavern', { suffix: '' });
-        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : '/home/node/app/config.yaml';
-        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : '/home/node/app/data';
+        const configPath = isGlobal ? path.join(appPaths.data, 'config.yaml') : './config.yaml';
+        const dataPath = isGlobal ? path.join(appPaths.data, 'data') : './data';
         return Object.freeze({
             configPath: configPath,
             dataRoot: dataPath,
@@ -70,6 +71,7 @@ export class CommandLineParser {
             ssl: false,
             certPath: 'certs/cert.pem',
             keyPath: 'certs/privkey.pem',
+            keyPassphrase: '',
             whitelistMode: true,
             basicAuthMode: false,
             requestProxyEnabled: false,
@@ -193,6 +195,11 @@ export class CommandLineParser {
                 default: null,
                 describe: 'Path to SSL private key file',
             })
+            .option('keyPassphrase', {
+                type: 'string',
+                default: null,
+                describe: 'Passphrase for the SSL private key',
+            })
             .option('whitelist', {
                 type: 'boolean',
                 default: null,
@@ -291,6 +298,7 @@ export class CommandLineParser {
             ssl: cliArguments.ssl ?? getConfigValue('ssl.enabled', defaultConfig.ssl, 'boolean'),
             certPath: cliArguments.certPath ?? getConfigValue('ssl.certPath', defaultConfig.certPath),
             keyPath: cliArguments.keyPath ?? getConfigValue('ssl.keyPath', defaultConfig.keyPath),
+            keyPassphrase: cliArguments.keyPassphrase ?? getConfigValue('ssl.keyPassphrase', defaultConfig.keyPassphrase),
             whitelistMode: cliArguments.whitelist ?? getConfigValue('whitelistMode', defaultConfig.whitelistMode, 'boolean'),
             basicAuthMode: cliArguments.basicAuthMode ?? getConfigValue('basicAuthMode', defaultConfig.basicAuthMode, 'boolean'),
             requestProxyEnabled: cliArguments.requestProxyEnabled ?? getConfigValue('requestProxy.enabled', defaultConfig.requestProxyEnabled, 'boolean'),
@@ -314,10 +322,8 @@ export class CommandLineParser {
             },
             getBrowserLaunchHostname: async function ({ useIPv6, useIPv4 }) {
                 if (this.browserLaunchHostname === 'auto') {
-                    const localhostResolve = await canResolve('localhost', useIPv6, useIPv4);
-
                     if (useIPv6 && useIPv4) {
-                        return (this.browserLaunchAvoidLocalhost || !localhostResolve) ? '[::1]' : 'localhost';
+                        return this.browserLaunchAvoidLocalhost ? '[::1]' : 'localhost';
                     }
 
                     if (useIPv6) {

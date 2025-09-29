@@ -17,7 +17,7 @@ import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '
 import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandEnumValue.js';
 import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCommonEnumsProvider.js';
 import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
-import { callGenericPopup, Popup, POPUP_TYPE, POPUP_RESULT } from './popup.js';
+import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
@@ -26,7 +26,7 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Xavier", "#hidden#-meows"],
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
@@ -34,10 +34,7 @@ const botmakersMap = {
     ],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan"],
-    "retsukoh": [
-        "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami",
-        "bb-retsukoh-toji","bb-retsukoh-geto","bb-retsukoh-judas"
-    ],
+    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
@@ -260,6 +257,7 @@ const KNOWN_DECORATORS = ['@@activate', '@@dont_activate'];
  * @property {Array} worldInfoDepth - Array of depth entries
  * @property {Array} anBefore - Array of entries before Author's Note
  * @property {Array} anAfter - Array of entries after Author's Note
+ * @property {{[key: string]: string[]}} outletEntries - Array of entries to be added to an outlet
  */
 
 /**
@@ -270,6 +268,7 @@ const KNOWN_DECORATORS = ['@@activate', '@@dont_activate'];
  * @property {any[]} WIDepthEntries The depth entries.
  * @property {any[]} ANBeforeEntries The entries before Author's Note.
  * @property {any[]} ANAfterEntries The entries after Author's Note.
+ * @property {{[key: string]: string[]}} outletEntries - Array of entries to be added to an outlet
  * @property {Set<any>} allActivatedEntries All entries.
  */
 
@@ -921,6 +920,7 @@ export const world_info_position = {
     atDepth: 4,
     EMTop: 5,
     EMBottom: 6,
+    outlet: 7,
 };
 
 export const wi_anchor_position = {
@@ -970,9 +970,9 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanD
         worldInfoDepth: activatedWorldInfo.WIDepthEntries ?? [],
         anBefore: activatedWorldInfo.ANBeforeEntries ?? [],
         anAfter: activatedWorldInfo.ANAfterEntries ?? [],
+        outletEntries: activatedWorldInfo.outletEntries ?? {},
     };
 }
-
 /**
 *Filters world names based on user permissions*
 *@param {object} data - The data containing world names*
@@ -2155,14 +2155,19 @@ export async function updateWorldInfoList() {
     });
 
     if (result.ok) {
-        var data = await result.json();
+        const data = await result.json();
+        const editorSelected = String($('#world_editor_select').find(':selected').text());
         world_names = filterWorldNames(data);
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
         world_names.forEach((item, i) => {
-            $('#world_info').append(`<option value='${i}'${selected_world_info.includes(item) ? ' selected' : ''}>${item}</option>`);
-            $('#world_editor_select').append(`<option value='${i}'>${item}</option>`);
+            const globalListOption = new Option(item, i.toString());
+            globalListOption.selected = selected_world_info.includes(item);
+            const editorListOption = new Option(item, i.toString());
+            editorListOption.selected = editorSelected === item;
+            $('#world_info').append(globalListOption);
+            $('#world_editor_select').append(editorListOption);
         });
     }
 }
@@ -2328,6 +2333,7 @@ function updateWorldEntryKeyOptionsCache(keyOptions, { remove = false, reset = f
     // Sort by count DESC and then alphabetically
     worldEntryKeyOptionsCache.sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
 }
+
 function clearEntryList($list) {
     console.time('clearEntryList');
 
@@ -2389,8 +2395,10 @@ function clearEntryList($list) {
 
     console.timeEnd('clearEntryList');
 }
+
+//MARK: displayWorldEntries
 async function displayWorldEntries(name, data, navigation = navigation_option.none, flashOnNav = true) {
-    updateEditor = (navigation, flashOnNav = true) => displayWorldEntries(name, data, navigation, flashOnNav);
+    updateEditor = async (navigation, flashOnNav = true) => await displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
 
@@ -2600,21 +2608,21 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         const entryCount = Object.keys(data.entries).length;
         const moreThan100 = entryCount > 100;
 
-        let content = '<span>Apply your current sorting to the "Order" field. The Order values will go down from the chosen number.</span>';
+        let content = '<span>' + t`Apply your current sorting to the "Order" field. The Order values will go down from the chosen number.` + '</span>';
         if (moreThan100) {
-            content += `<div class="m-t-1"><i class="fa-solid fa-triangle-exclamation" style="color: #FFD43B;"></i> More than 100 entries in this world. If you don't choose a number higher than that, the lower entries will default to 0.<br />(Usual default: 100)<br />Minimum: ${entryCount}</div>`;
+            content += '<div class="m-t-1"><i class="fa-solid fa-triangle-exclamation" style="color: #FFD43B;"></i> ' + t`More than 100 entries in this world. If you don't choose a number higher than that, the lower entries will default to 0.<br />(Usual default: 100)<br />Minimum: ${entryCount}` + '</div>';
         }
 
-        const result = await Popup.show.input('Apply Current Sorting', content, '100', { okButton: 'Apply', cancelButton: 'Cancel' });
+        const result = await Popup.show.input(t`Apply Current Sorting`, content, '100', { okButton: t`Apply`, cancelButton: 'Cancel' });
         if (!result) return;
 
         const start = Number(result);
         if (isNaN(start) || start < 0) {
-            toastr.error('Invalid number: ' + result, 'Apply Current Sorting');
+            toastr.error(t`Invalid number: ${result}`, t`Apply Current Sorting`);
             return;
         }
         if (start < entryCount) {
-            toastr.warning('A number lower than the entry count has been chosen. All entries below that will default to 0.', 'Apply Current Sorting');
+            toastr.warning(t`A number lower than the entry count has been chosen. All entries below that will default to 0.`, t`Apply Current Sorting`);
         }
 
         // We need to sort the entries here, as the data source isn't sorted
@@ -2738,6 +2746,7 @@ export const originalWIDataKeyMap = {
     'cooldown': 'extensions.cooldown',
     'delay': 'extensions.delay',
     'triggers': 'extensions.triggers',
+    'ignoreBudget': 'extensions.ignore_budget',
 };
 
 /** Checks the state of the current search, and adds/removes the search sorting option accordingly */
@@ -3489,7 +3498,7 @@ export async function getWorldEntry(name, data, entry) {
             return;
         }
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move '${sourceName}' to:`;
+        wrapper.textContent = t`Copy '${sourceName}' to:`;
         const container = document.createElement('div');
         container.appendChild(wrapper);
         container.appendChild(select);
@@ -3497,10 +3506,14 @@ export async function getWorldEntry(name, data, entry) {
         select.addEventListener('change', function () {
             selectedWorldIndex = this.value === '' ? -1 : Number(this.value);
         });
-        const popupConfirm = await callGenericPopup(container, POPUP_TYPE.CONFIRM, '', {
-            okButton: t`Move`,
+        const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
             cancelButton: t`Cancel`,
+            customButtons: [
+                { text: t`Copy`, result: POPUP_RESULT.CUSTOM2 },
+            ],
         });
+        popup.okButton.style.display = 'none'; // Hide the default OK button
+        const popupConfirm = await popup.show();
         if (!popupConfirm) return;
         if (selectedWorldIndex === -1) return;
         const selectedValue = world_names[selectedWorldIndex];
@@ -3508,7 +3521,8 @@ export async function getWorldEntry(name, data, entry) {
             toastr.warning(t`Please select a target lorebook.`);
             return;
         }
-        await moveWorldInfoEntry(sourceWorld, selectedValue, sourceUid);
+        const deleteOriginal = false; // Always copy, never move
+        await moveWorldInfoEntry(sourceWorld, selectedValue, sourceUid, { deleteOriginal });
     });
 
     let drawerInitialized = false;
@@ -3670,6 +3684,19 @@ export async function getWorldEntry(name, data, entry) {
         contentInput.val(entry.content).trigger('input', { skipCount: true, noSave: true });
         editTemplate.find('.editor_maximize').attr('data-for', contentInputId);
 
+        // Outlet name
+        const outletNameInput = editTemplate.find('input[name="outletName"]');
+        outletNameInput.data('uid', entry.uid);
+        outletNameInput.on('input', async function (_, { noSave = false } = {}) {
+            const uid = $(this).data('uid');
+            const value = $(this).val();
+            data.entries[uid].outletName = value;
+            setWIOriginalDataValue(data, uid, 'extensions.outlet_name', data.entries[uid].outletName);
+            !noSave && await saveWorldInfo(name, data);
+        });
+        outletNameInput.val(entry.outletName ?? '').trigger('input', { noSave: true });
+        setTimeout(() => createEntryInputAutocomplete(outletNameInput, getOutletNameCallback(data), { allowMultiple: true }), 1);
+
         // Scan depth
         const scanDepthInput = editTemplate.find('input[name="scanDepth"]');
     scanDepthInput.data('uid', entry.uid);
@@ -3819,6 +3846,18 @@ export async function getWorldEntry(name, data, entry) {
             .trigger('input', { noSave: true })
             .trigger('change');
 
+        // Ignore budget
+        const ignoreBudgetInput = editTemplate.find('input[name="ignoreBudget"]');
+        ignoreBudgetInput.data('uid', entry.uid);
+        ignoreBudgetInput.on('input', async function (_, { noSave = false } = {}) {
+            const uid = $(this).data('uid');
+            const value = $(this).prop('checked');
+            data.entries[uid].ignoreBudget = value;
+            setWIOriginalDataValue(data, uid, 'extensions.ignore_budget', data.entries[uid].ignoreBudget);
+            !noSave && await saveWorldInfo(name, data);
+        });
+        ignoreBudgetInput.prop('checked', entry.ignoreBudget ?? false).trigger('input', { noSave: true });
+
         countTokensDebounced(counter, contentInput.val());
 
         editTemplate.find('.inline-drawer-content').css('display', 'none');
@@ -3830,63 +3869,105 @@ export async function getWorldEntry(name, data, entry) {
     return headerTemplate;
 }
 
+
+/**
+ * Builds a jQuery UI autocomplete callback: (control, request, response) => void
+ * @param {object} [opt={}] - Optional arguments
+ * @param {{entries: Record<string, any>}} [opt.data]   - Your WI data
+ * @param {(entry:any)=>string|string[]|null|undefined} [opt.collectValues] - Extract values from one entry
+ * @param {() => Iterable<string>} [opt.includeExtras] - Optional global extras to include
+ * @param {(ctx:{result:string[], control:JQuery, input:any, haystack:string[]})=>string[]} [opt.postFilter] - Optional final filter step (for special rules like your "group" de-dupe logic)
+ */
+function buildAutocompleteCallback({ data, collectValues, includeExtras = () => [], postFilter } = {}) {
+    return function (control, input, output) {
+        const uid = $(control).data('uid');
+
+        // Collect unique values from all *other* entries
+        const values = new Set();
+        for (const entry of Object.values(data.entries ?? {})) {
+            if (entry?.uid == uid) continue;
+            const raw = collectValues(entry);
+            if (raw == null) continue;
+            const arr = Array.isArray(raw) ? raw : [raw];
+            for (const v of arr) {
+                const s = String(v).trim();
+                if (s) values.add(s);
+            }
+        }
+
+        // Add optional global extras
+        for (const v of includeExtras()) {
+            const s = String(v).trim();
+            if (s) values.add(s);
+            }
+
+        // Sort stable & locale-aware
+        const haystack = Array.from(values).sort((a, b) => a.localeCompare(b));
+
+        // Case-insensitive contains
+        const needle = String(input.term ?? '').toLowerCase();
+        let result = haystack.filter(x => x.toLowerCase().includes(needle));
+
+        // Optional final-pass semantics
+        if (postFilter) {
+            result = postFilter({ result, control: $(control), input, haystack });
+        }
+
+        output(result);
+    };
+}
+
+/**
+ * Splits a string into an array of strings, separated by commas and trimmed
+ * @param {string} s - The string to split
+ * @returns {string[]} An array of strings, separated by commas and trimmed
+ */
+const splitCsv = s => String(s ?? '').split(/,\s*/).filter(Boolean);
+
 /**
  * Get the inclusion groups for the autocomplete.
  * @param {any} data WI data
  * @returns {(input: any, output: any) => any} Callback function for the autocomplete
  */
 function getInclusionGroupCallback(data) {
-    return function (control, input, output) {
-        const uid = $(control).data('uid');
-        const thisGroups = String($(control).val()).split(/,\s*/).filter(x => x).map(x => x.toLowerCase());
-        const groups = new Set();
-        for (const entry of Object.values(data.entries)) {
-            // Skip the groups of this entry, because auto-complete should only suggest the ones that are already available on other entries
-            if (entry.uid == uid) continue;
-            if (entry.group) {
-                entry.group.split(/,\s*/).filter(x => x).forEach(x => groups.add(x));
-            }
-        }
+    return buildAutocompleteCallback({
+        data,
+        collectValues: entry => entry.group ? splitCsv(entry.group) : [],
+        postFilter: ({ result, control, input, haystack }) => {
+            const thisGroups = splitCsv(String($(control).val()));
+            const needle = String(input.term ?? '').toLowerCase();
+            const hasExactMatch = haystack.some(x => x.toLowerCase() === needle);
 
-        const haystack = Array.from(groups);
-        haystack.sort((a, b) => a.localeCompare(b));
-        const needle = input.term.toLowerCase();
-        const hasExactMatch = haystack.findIndex(x => x.toLowerCase() == needle) !== -1;
-        const result = haystack.filter(x => x.toLowerCase().includes(needle) && (!thisGroups.includes(x) || hasExactMatch && thisGroups.filter(g => g == x).length == 1));
-
-        output(result);
-    };
+            // include suggestion if it contains the needle AND
+            // (not already present OR (exact match typed && appears only once))
+            return result.filter(x =>
+                !thisGroups.includes(x) ||
+                (hasExactMatch && thisGroups.filter(g => g === x).length === 1),
+            );
+        },
+    });
 }
 
 function getAutomationIdCallback(data) {
-    return function (control, input, output) {
-        const uid = $(control).data('uid');
-        const ids = new Set();
-        for (const entry of Object.values(data.entries)) {
-            // Skip automation id of this entry, because auto-complete should only suggest the ones that are already available on other entries
-            if (entry.uid == uid) continue;
-            if (entry.automationId) {
-                ids.add(String(entry.automationId));
+    return buildAutocompleteCallback({
+        data,
+        collectValues: entry => entry.automationId != null ? [String(entry.automationId)] : [],
+        includeExtras: () =>
+            ('quickReplyApi' in globalThis && globalThis.quickReplyApi?.listAutomationIds)
+                ? globalThis.quickReplyApi.listAutomationIds()
+                : [],
+    });
             }
-        }
 
-        if ('quickReplyApi' in globalThis) {
-            for (const automationId of globalThis.quickReplyApi.listAutomationIds()) {
-                ids.add(String(automationId));
-            }
-        }
-
-        const haystack = Array.from(ids);
-        haystack.sort((a, b) => a.localeCompare(b));
-        const needle = input.term.toLowerCase();
-        const result = haystack.filter(x => x.toLowerCase().includes(needle));
-
-        output(result);
-    };
+function getOutletNameCallback(data) {
+    return buildAutocompleteCallback({
+        data,
+        collectValues: entry => entry.position === world_info_position.outlet && entry.outletName ? [entry.outletName] : [],
+    });
 }
 
 /**
- * Create an autocomplete for the inclusion group.
+ * Create an autocomplete for an input element.
  * @param {JQuery<HTMLElement>} input - Input element to attach the autocomplete to
  * @param {(control: JQuery<HTMLElement>, input: any, output: any) => any} callback - Source data callbacks
  * @param {object} [options={}] - Optional arguments
@@ -3938,7 +4019,7 @@ export function duplicateWorldInfoEntry(data, uid) {
     }
 
     // Exclude uid and gather the rest of the properties
-    const originalData = Object.assign({}, data.entries[uid]);
+    const originalData = structuredClone(data.entries[uid]);
     delete originalData.uid;
 
     // Create new entry and copy over data
@@ -3961,7 +4042,7 @@ export async function deleteWorldInfoEntry(data, uid, { silent = false } = {}) {
         return;
     }
 
-    const confirmation = silent || await Popup.show.confirm(`Delete the entry with UID: ${uid}?`, 'This action is irreversible!');
+    const confirmation = silent || await Popup.show.confirm(t`Delete the entry with UID: ${uid}?`, t`This action is irreversible!`);
     if (!confirmation) {
         return false;
     }
@@ -3990,6 +4071,7 @@ export const newWorldInfoEntryDefinition = {
     order: { default: 100, type: 'number' },
     position: { default: 0, type: 'number' },
     disable: { default: false, type: 'boolean' },
+    ignoreBudget: { default: false, type: 'boolean' },
     excludeRecursion: { default: false, type: 'boolean' },
     preventRecursion: { default: false, type: 'boolean' },
     matchPersonaDescription: { default: false, type: 'boolean' },
@@ -4002,6 +4084,7 @@ export const newWorldInfoEntryDefinition = {
     probability: { default: 100, type: 'number' },
     useProbability: { default: true, type: 'boolean' },
     depth: { default: DEFAULT_DEPTH, type: 'number' },
+    outletName: { default: '', type: 'string' },
     group: { default: '', type: 'string' },
     groupOverride: { default: false, type: 'boolean' },
     groupWeight: { default: DEFAULT_WEIGHT, type: 'number' },
@@ -4553,7 +4636,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     timedEffects.checkTimedEffects();
 
     if (sortedEntries.length === 0) {
-        return { worldInfoBefore: '', worldInfoAfter: '', WIDepthEntries: [], EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], allActivatedEntries: new Set() };
+        return { worldInfoBefore: '', worldInfoAfter: '', WIDepthEntries: [], EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {}, allActivatedEntries: new Set() };
     }
 
     /** @type {number[]} Represents the delay levels for entries that are delayed until recursion */
@@ -4813,7 +4896,17 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         console.debug('[WI] --- PROBABILITY CHECKS ---');
         !newEntries.length && console.debug('[WI] No probability checks to do');
 
+        let ignoresBudget = newEntries.filter(e => e.ignoreBudget).length;
+
         for (const entry of newEntries) {
+            ignoresBudget -= (entry.ignoreBudget ? 1 : 0);
+            if (token_budget_overflowed && !entry.ignoreBudget) {
+                if (ignoresBudget > 0) {
+                    continue;
+                }
+                break;
+            }
+
             function verifyProbability() {
                 // If we don't need to roll, it's always true
                 if (!entry.useProbability || entry.probability === 100) {
@@ -4847,7 +4940,8 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             entry.content = substituteParams(entry.content);
             newContent += `${entry.content}\n`;
 
-            if ((textToScanTokens + (await getTokenCountAsync(newContent))) >= budget) {
+            if (!entry.ignoreBudget && (textToScanTokens + (await getTokenCountAsync(newContent))) >= budget) {
+                if (!token_budget_overflowed) {
                 console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
                 if (world_info_overflow_alert) {
                     console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
@@ -4856,7 +4950,8 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
                     console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
                 }
                 token_budget_overflowed = true;
-                break;
+                }
+                continue;
             }
 
             allActivatedEntries.set(`${entry.world}.${entry.uid}`, entry);
@@ -4942,6 +5037,8 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     const ANTopEntries = [];
     const ANBottomEntries = [];
     const WIDepthEntries = [];
+    /** @type {{[key: string]: string[]}} */
+    const WIOutletEntries = {};
 
     // Appends from insertion order 999 to 1. Use unshift for this purpose
     // TODO (kingbri): Change to use WI Anchor positioning instead of separate top/bottom arrays
@@ -4950,7 +5047,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         const content = getRegexedString(entry.content, regex_placement.WORLD_INFO, { depth: regexDepth, isMarkdown: false, isPrompt: true });
 
         if (!content) {
-            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content', entry);
+            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content');
             return;
         }
 
@@ -4990,6 +5087,18 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
                 }
                 break;
             }
+            case world_info_position.outlet: {
+                if (!entry.outletName) {
+                    console.warn(`[WI] Entry ${entry.uid} has position 'outlet' but no outlet name. Skipping.`);
+                    break;
+                }
+                if (Array.isArray(WIOutletEntries[entry.outletName])) {
+                    WIOutletEntries[entry.outletName].push(content);
+                } else {
+                    WIOutletEntries[entry.outletName] = [content];
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -5011,7 +5120,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`);
     console.debug(`[WI] --- DONE${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
-    return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };
+    return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, outletEntries: WIOutletEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };
 }
 
 /**
@@ -5082,7 +5191,7 @@ function filterGroupsByTimedEffects(groups, timedEffects, removeEntry) {
                     continue;
                 }
 
-                console.debug(`[WI] Entry ${entry.uid}`, `removed as a non-sticky loser from inclusion group '${key}'`, entry);
+                console.debug(`[WI] Entry ${entry.uid}`, `removed as a non-sticky loser from inclusion group '${key}'`);
                 removeEntry(entry);
             }
 
@@ -5143,7 +5252,7 @@ function filterByInclusionGroups(newEntries, allActivatedEntries, buffer, scanSt
                 continue;
             }
 
-            if (logging) console.debug(`[WI] Entry ${entry.uid}`, `removed as loser from inclusion group '${entry.group}'`, entry);
+            if (logging) console.debug(`[WI] Entry ${entry.uid}`, `removed as loser from inclusion group '${entry.group}'`);
             removeEntry(entry);
         }
     }
@@ -5191,7 +5300,7 @@ function filterByInclusionGroups(newEntries, allActivatedEntries, buffer, scanSt
             currentWeight += (entry.groupWeight ?? DEFAULT_WEIGHT);
 
             if (rollValue <= currentWeight) {
-                console.debug(`[WI] Entry ${entry.uid}`, `activated as roll winner from inclusion group '${key}'`, entry);
+                console.debug(`[WI] Entry ${entry.uid}`, `activated as roll winner from inclusion group '${key}'`);
                 winner = entry;
                 break;
             }
@@ -5231,6 +5340,7 @@ function convertAgnaiMemoryBook(inputObj) {
             displayIndex: index,
             probability: 100,
             useProbability: true,
+            outletName: '',
             group: '',
             groupOverride: false,
             groupWeight: DEFAULT_WEIGHT,
@@ -5244,6 +5354,7 @@ function convertAgnaiMemoryBook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5274,6 +5385,7 @@ function convertRisuLorebook(inputObj) {
             displayIndex: index,
             probability: entry.activationPercent ?? 100,
             useProbability: entry.activationPercent ?? true,
+            outletName: '',
             group: '',
             groupOverride: false,
             groupWeight: DEFAULT_WEIGHT,
@@ -5287,6 +5399,7 @@ function convertRisuLorebook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5322,6 +5435,7 @@ function convertNovelLorebook(inputObj) {
             displayIndex: index,
             probability: 100,
             useProbability: true,
+            outletName: '',
             group: '',
             groupOverride: false,
             groupWeight: DEFAULT_WEIGHT,
@@ -5335,6 +5449,7 @@ function convertNovelLorebook(inputObj) {
             cooldown: null,
             delay: null,
             triggers: [],
+            ignoreBudget: false,
         };
     });
 
@@ -5371,6 +5486,7 @@ export function convertCharacterBook(characterBook) {
             useProbability: entry.extensions?.useProbability ?? true,
             depth: entry.extensions?.depth ?? DEFAULT_DEPTH,
             selectiveLogic: entry.extensions?.selectiveLogic ?? world_info_logic.AND_ANY,
+            outletName: entry.extensions?.outlet_name ?? '',
             group: entry.extensions?.group ?? '',
             groupOverride: entry.extensions?.group_override ?? false,
             groupWeight: entry.extensions?.group_weight ?? DEFAULT_WEIGHT,
@@ -5392,6 +5508,7 @@ export function convertCharacterBook(characterBook) {
             matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
             extensions: entry.extensions ?? {},
             triggers: entry.extensions?.triggers || [],
+            ignoreBudget: entry.extensions?.ignore_budget ?? false,
         };
     });
 
@@ -5719,9 +5836,11 @@ export async function assignLorebookToChat(event) {
  * @param {string} sourceName - The name of the source lorebook file.
  * @param {string} targetName - The name of the target lorebook file.
  * @param {string|number} uid - The UID of the entry to move from the source lorebook.
+ * @param {Object} options - Additional options for the move operation.
+ * @param {boolean} [options.deleteOriginal=true] - Whether to delete the original entry from the source lorebook after moving it.
  * @returns {Promise<boolean>} True if the move was successful, false otherwise.
  */
-export async function moveWorldInfoEntry(sourceName, targetName, uid) {
+export async function moveWorldInfoEntry(sourceName, targetName, uid, { deleteOriginal = true } = {}) {
     if (sourceName === targetName) {
         return false;
     }
@@ -5763,7 +5882,6 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
 
         const entryToMove = structuredClone(sourceData.entries[entryUidString]);
 
-
         const newUid = getFreeWorldEntryUid(targetData);
         if (newUid === null) {
             console.error(`[WI Move] Failed to get a free UID in '${targetName}'.`);
@@ -5777,20 +5895,20 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
 
         targetData.entries[newUid] = entryToMove;
 
+        if (deleteOriginal) {
         delete sourceData.entries[entryUidString];
         // Remove from originalData if it exists
         deleteWIOriginalDataValue(sourceData, entryUidString);
         // TODO: setWIOriginalDataValue
         console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
-
+        }
 
         await saveWorldInfo(targetName, targetData, true);
         console.debug(`[WI Move] Saved target lorebook '${targetName}'.`);
         await saveWorldInfo(sourceName, sourceData, true);
         console.debug(`[WI Move] Saved source lorebook '${sourceName}'.`);
 
-
-        console.log(`[WI Move] ${entryToMove.comment} moved successfully to '${targetName}'.`);
+        console.log(`[WI Move] ${entryToMove.comment} ${deleteOriginal ? 'moved' : 'copied'} successfully to '${targetName}'.`);
 
         // Check if the currently viewed book in the editor is the source or target and reload it
         const currentEditorBookIndex = Number($('#world_editor_select').val());
@@ -5801,6 +5919,10 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
             }
         }
 
+        toastr.success(deleteOriginal
+            ? t`Entry moved successfully from '${sourceName}' to '${targetName}'.`
+            : t`Entry copied successfully to '${targetName}'.`);
+
         return true;
     } catch (error) {
         toastr.error(t`An unexpected error occurred while moving the entry: ${error.message}`);
@@ -5808,583 +5930,6 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid) {
         return false;
     }
 }
-
-// ======================== WORLD INFO PRESETS SYSTEM ========================
-
-/**
- * Settings class for managing World Info presets
- */
-export class WIPresetSettings {
-    static from(props) {  
-        props.presetList = props.presetList?.map(it => WIPreset.from(it)) ?? [];  
-        const instance = Object.assign(new this(), props);  
-        power_user.worldInfoPresets = instance;  
-        saveSettingsDebounced(); // Add this line  
-        return instance;  
-    }
-}
-
-/**
- * Preset class representing a World Info preset
- */
-export class WIPreset {
-    static from(props) {
-        const instance = Object.assign(new this(), props);
-        return instance;
-    }
-    /**@type {String}*/ name;
-    /**@type {String[]}*/ worldList = [];
-
-    toJSON() {
-        return {
-            name: this.name,
-            worldList: this.worldList,
-        };
-    }
-}
-
-/**@type {WIPresetSettings}*/
-export let wiPresetSettings;
-
-/**@type {HTMLSelectElement}*/
-let wiPresetSelect;
-
-/**
- * Activate a preset by name
- */
-const activateWIPresetByName = async (name) => {
-    await activateWIPreset(wiPresetSettings.presetList.find(it => it.name.toLowerCase() == name.toLowerCase()));
-};
-
-/**
- * Activate a World Info preset
- */
-export const activateWIPreset = async (preset) => {
-    // Clear current selection
-    selected_world_info.length = 0;
-    $('#world_info').val('');
-    
-    wiPresetSettings.presetName = preset?.name ?? '';
-    updateWIPresetSelect();
-    
-    if (preset) {
-        // Add worlds from preset to selection
-        for (const world of preset.worldList) {
-            if (world_names.includes(world) && !selected_world_info.includes(world)) {
-                selected_world_info.push(world);
-            }
-        }
-        
-        // Update the UI
-        updateWorldInfoList();
-        eventSource.emit(event_types.WORLDINFO_SETTINGS_UPDATED);
-    }
-    
-    saveSettingsDebounced();
-};
-
-/**
- * Update the preset select dropdown
- */
-const updateWIPresetSelect = () => {
-    if (!wiPresetSelect) return;
-    
-    /**@type {HTMLOptionElement[]}*/
-    const opts = Array.from(wiPresetSelect.children);
-
-    const added = [];
-    const removed = [];
-    const updated = [];
-    
-    for (const preset of wiPresetSettings.presetList) {
-        const opt = opts.find(opt => opt.value.toLowerCase() == preset.name.toLowerCase());
-        if (opt) {
-            if (opt.value != preset.name) {
-                updated.push({ preset, opt });
-            }
-        } else {
-            added.push(preset);
-        }
-    }
-    
-    for (const opt of opts) {
-        if (opt.value == '') continue;
-        if (wiPresetSettings.presetList.find(preset => opt.value.toLowerCase() == preset.name.toLowerCase())) continue;
-        removed.push(opt);
-    }
-    
-    for (const opt of removed) {
-        opt.remove();
-        opts.splice(opts.indexOf(opt), 1);
-    }
-    
-    for (const update of updated) {
-        update.opt.value = update.preset.name;
-        update.opt.textContent = update.preset.name;
-    }
-    
-    const sortedOpts = opts.toSorted((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
-    sortedOpts.forEach((opt, idx) => {
-        if (wiPresetSelect.children[idx] != opt) {
-            wiPresetSelect.children[idx].insertAdjacentElement('beforebegin', opt);
-        }
-    });
-    
-    for (const preset of added) {
-        const opt = document.createElement('option');
-        opt.value = preset.name;
-        opt.textContent = preset.name;
-        opt.title = preset.worldList.join(', ');
-        const before = Array.from(wiPresetSelect.children).find(it => it.value.toLowerCase().localeCompare(preset.name.toLowerCase()) == 1);
-        if (before) before.insertAdjacentElement('beforebegin', opt);
-        else wiPresetSelect.append(opt);
-    }
-    
-    wiPresetSelect.value = wiPresetSettings.presetName;
-};
-
-/**
- * Load a World Info book from the backend for presets
- */
-const loadWIBook = async (name) => {
-    const result = await fetch('/api/worldinfo/get', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ name }),
-    });
-    if (result.ok) {
-        const data = await result.json();
-        data.entries = Object.keys(data.entries).map(it => {
-            data.entries[it].book = name;
-            return data.entries[it];
-        });
-        data.book = name;
-        return data;
-    } else {
-        toastr.warning(`Failed to load World Info book: ${name}`);
-    }
-};
-
-/**
- * Import books included in a preset
- */
-const importWIBooks = async (data) => {
-    if (data.books && Object.keys(data.books).length > 0) {
-        const doImport = await callGenericPopup(`<h3>The preset contains World Info books. Import the books?</h3>`, POPUP_TYPE.CONFIRM);
-        if (doImport) {
-            for (const key of Object.keys(data.books)) {
-                const book = data.books[key];
-                const blob = new Blob([JSON.stringify(book)], { type: 'text' });
-                const file = new File([blob], `${key}.json`);
-                await importWorldInfo(file);
-            }
-        }
-    }
-};
-
-/**
- * Import World Info presets from files
- */
-const importWIPreset = async (files) => {
-    for (let i = 0; i < files.length; i++) {
-        await importSingleWIPreset(files.item(i));
-    }
-};
-
-/**
- * Import a single World Info preset file
- */
-const importSingleWIPreset = async (file) => {
-    try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        let old = wiPresetSettings.presetList.find(it => it.name.toLowerCase() == data.name.toLowerCase());
-        
-        while (old) {
-            const popupText = `
-                <h3>Import World Info Preset: "${data.name}"</h3>
-                <h4>
-                    A preset by that name already exists. Change the name to import under a new name,
-                    or keep the name to overwrite the existing preset.
-                </h4>
-            `;
-            const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, data.name);
-            if (newName == data.name) {
-                const overwrite = await callGenericPopup(`<h3>Overwrite World Info Preset "${newName}"?</h3>`, POPUP_TYPE.CONFIRM);
-                if (overwrite) {
-                    old.worldList = data.worldList;
-                    await importWIBooks(data);
-                    if (wiPresetSettings.preset == old) {
-                        activateWIPreset(old);
-                        saveSettingsDebounced();
-                    }
-                }
-                return;
-            } else {
-                data.name = newName;
-                old = wiPresetSettings.presetList.find(it => it.name.toLowerCase() == data.name.toLowerCase());
-            }
-        }
-        
-        const preset = new WIPreset();
-        preset.name = data.name;
-        preset.worldList = data.worldList;
-        wiPresetSettings.presetList.push(preset);
-        await importWIBooks(data);
-        updateWIPresetSelect();
-        saveSettingsDebounced();
-    } catch (ex) {
-        toastr.error(`Failed to import "${file.name}":\n\n${ex.message}`);
-    }
-};
-
-/**
- * Create a new World Info preset
- */
-const createWIPreset = async () => {
-    const name = await callGenericPopup('<h3>Preset Name:</h3>', POPUP_TYPE.INPUT, wiPresetSettings.presetName);
-    if (!name) return;
-    
-    const preset = new WIPreset();
-    preset.name = name;
-    preset.worldList = [...selected_world_info];
-    wiPresetSettings.presetList.push(preset);
-    wiPresetSettings.presetName = name;
-    updateWIPresetSelect();
-    saveSettingsDebounced();
-};
-
-/**
- * Initialize the World Info presets UI
- */
-const initWIPresets = () => {
-    // Initialize preset settings now that power_user is available
-    wiPresetSettings = WIPresetSettings.from(power_user.worldInfoPresets ?? {});
-    
-    const container = document.querySelector('#WorldInfo > div > h3');
-    const dom = document.createElement('div');
-    dom.classList.add('wi-presets-container');
-    
-    wiPresetSelect = document.createElement('select');
-    wiPresetSelect.classList.add('wi-presets-select', 'text_pole');
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '--- Pick a Preset ---';
-    wiPresetSelect.append(blank);
-    
-    for (const preset of wiPresetSettings.presetList.toSorted((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))) {
-        const opt = document.createElement('option');
-        opt.value = preset.name;
-        opt.textContent = preset.name;
-        opt.title = preset.worldList.join(', ');
-        wiPresetSelect.append(opt);
-    }
-    
-    wiPresetSelect.value = wiPresetSettings.presetName ?? '';
-    wiPresetSelect.addEventListener('change', async () => {
-        await activateWIPresetByName(wiPresetSelect.value);
-    });
-    dom.append(wiPresetSelect);
-    
-    const actions = document.createElement('div');
-    actions.classList.add('wi-presets-actions');
-    
-    // Rename button
-    const btnRename = document.createElement('div');
-    btnRename.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-pencil');
-    btnRename.title = 'Rename current preset';
-    btnRename.addEventListener('click', async () => {
-        const name = await callGenericPopup('<h3>Rename Preset:</h3>', POPUP_TYPE.INPUT, wiPresetSettings.presetName);
-        if (!name) return;
-        wiPresetSettings.preset.name = name;
-        wiPresetSettings.presetName = name;
-        updateWIPresetSelect();
-        saveSettingsDebounced();
-    });
-    actions.append(btnRename);
-    
-    // Update button
-    const btnUpdate = document.createElement('div');
-    btnUpdate.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-save');
-    btnUpdate.title = 'Update current preset';
-    btnUpdate.addEventListener('click', () => {
-        if (!wiPresetSettings.preset) return createWIPreset();
-        wiPresetSettings.preset.worldList = [...selected_world_info];
-        saveSettingsDebounced();
-    });
-    actions.append(btnUpdate);
-    
-    // Create button
-    const btnCreate = document.createElement('div');
-    btnCreate.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-circle-plus');
-    btnCreate.title = 'Save current preset as';
-    btnCreate.addEventListener('click', async () => createWIPreset());
-    actions.append(btnCreate);
-    
-    // Restore button
-    const btnRestore = document.createElement('div');
-    btnRestore.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-rotate-left');
-    btnRestore.title = 'Restore current preset';
-    btnRestore.addEventListener('click', () => activateWIPreset(wiPresetSettings.preset));
-    actions.append(btnRestore);
-    
-    // Import file input and button
-    const importFile = document.createElement('input');
-    importFile.classList.add('wi-presets-import-file');
-    importFile.type = 'file';
-    importFile.style.display = 'none';
-    importFile.addEventListener('change', async () => {
-        await importWIPreset(importFile.files);
-        importFile.value = null;
-    });
-    
-    const btnImport = document.createElement('div');
-    btnImport.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-import');
-    btnImport.title = 'Import preset';
-    btnImport.addEventListener('click', () => importFile.click());
-    actions.append(btnImport);
-    
-    // Export button
-    const btnExport = document.createElement('div');
-    btnExport.classList.add('wi-presets-action', 'menu_button', 'fa-solid', 'fa-file-export');
-    btnExport.title = 'Export the current preset';
-    btnExport.addEventListener('click', async () => {
-        const popupText = `
-            <h3>Export World Info Preset: "${wiPresetSettings.presetName}"</h3>
-            <h4>Include the books' contents in the exported file?</h4>
-        `;
-        const includeBooks = await callGenericPopup(popupText, POPUP_TYPE.CONFIRM);
-        const data = wiPresetSettings.preset.toJSON();
-        if (includeBooks) {
-            let names = selected_world_info;
-            const books = {};
-            for (const book of names) {
-                books[book] = await loadWIBook(book);
-            }
-            data.books = books;
-        }
-        const blob = new Blob([JSON.stringify(data)], { type: 'text' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const name = `SillyTavern-WorldInfoPreset-${wiPresetSettings.presetName}`;
-        const ext = 'json';
-        a.download = `${name}.${ext}`;
-        a.click();
-    });
-    actions.append(btnExport);
-    
-    // Delete button
-    const btnDelete = document.createElement('div');
-    btnDelete.classList.add('wi-presets-action', 'menu_button', 'redWarningBG', 'fa-solid', 'fa-trash-can');
-    btnDelete.title = 'Delete the current preset';
-    btnDelete.addEventListener('click', async () => {
-        if (wiPresetSettings.presetName == '') return;
-        const confirmed = await callGenericPopup(`<h3>Delete World Info Preset "${wiPresetSettings.presetName}"?</h3>`, POPUP_TYPE.CONFIRM);
-        if (confirmed) {
-            wiPresetSettings.presetList.splice(wiPresetSettings.presetList.indexOf(wiPresetSettings.preset), 1);
-            wiPresetSettings.presetName = '';
-            updateWIPresetSelect();
-            saveSettingsDebounced();
-        }
-    });
-    actions.append(btnDelete);
-    
-    dom.append(actions);
-    dom.append(importFile);
-    container.insertAdjacentElement('afterend', dom);
-    
-    // Watch for world name changes to update presets
-    const sel = document.querySelector('#world_editor_select');
-    let bookNames = Array.from(sel.children).map(it => it.textContent);
-    const mo = new MutationObserver(async (muts) => {
-        const newNames = Array.from(sel.children).map(it => it.textContent);
-        const added = [];
-        const removed = [];
-        for (const nn of newNames) {
-            if (!bookNames.includes(nn)) added.push(nn);
-        }
-        for (const bn of bookNames) {
-            if (!newNames.includes(bn)) removed.push(bn);
-        }
-        if (added.length == 1 && removed.length == 1) {
-            const oldName = removed[0];
-            const newName = added[0];
-            const presets = wiPresetSettings.presetList.filter(preset => preset.worldList.includes(oldName));
-            if (presets.length > 0) {
-                const popupText = `
-                    <div style="text-align:left;">
-                        <h3>World Info Renamed</h3>
-                        <p>It looks like you renamed the World Info book "${oldName}" to "${newName}".</p>
-                        <p>The following presets currently include the World Info book "${oldName}":</p>
-                        <ul>
-                            ${presets.map(it => `<li>${it.name}</li>`).join('')}
-                        </ul>
-                        <p>
-                            Do you want to update all ${presets.length} presets that include "<strong>${oldName}</strong>" to now include "<strong>${newName}</strong>" instead?
-                        </p>
-                    </div>
-                `;
-                const dlg = new Popup(popupText, POPUP_TYPE.CONFIRM);
-                await dlg.show();
-                if (dlg.result == POPUP_RESULT.AFFIRMATIVE) {
-                    for (const preset of presets) {
-                        preset.worldList.splice(preset.worldList.indexOf(oldName), 1, newName);
-                    }
-                    saveSettingsDebounced();
-                }
-            }
-        }
-        bookNames = [...newNames];
-    });
-    mo.observe(sel, { childList: true });
-};
-
-// ======================== WORLD INFO TRANSFER SYSTEM ========================
-
-/**
- * Initialize the World Info transfer functionality
- */
-const initWITransfer = () => {
-    const alterTemplate = () => {  
-        const tpl = document.querySelector('#entry_edit_template');  
-        if (!tpl) {  
-            console.warn('Entry edit template not found, retrying...');  
-            setTimeout(alterTemplate, 100);  
-            return;  
-        }  
-        const transferBtn = document.createElement('i');
-        transferBtn.classList.add('wi-transfer-btn', 'menu_button', 'fa-solid', 'fa-truck-arrow-right');
-        transferBtn.title = 'Copy world info entry to another book';
-        tpl.querySelector('.duplicate_entry_button').insertAdjacentElement('beforebegin', transferBtn);
-    };
-    alterTemplate();
-
-    const mo = new MutationObserver(muts => {
-        for (const entry of [...document.querySelectorAll('#world_popup_entries_list .world_entry:not(.wi-transfer-processed)')]) {
-            const uid = entry.getAttribute('uid');
-            entry.classList.add('wi-transfer-processed');
-            const transferBtn = entry.querySelector('.wi-transfer-btn');
-            transferBtn.addEventListener('click', async (evt) => {
-                evt.stopPropagation();
-                let sel;
-                let isCopy = false;
-                const dom = document.createElement('div');
-                dom.classList.add('wi-transfer-modal');
-                
-                const title = document.createElement('h3');
-                title.textContent = 'Copy World Info Entry';
-                dom.append(title);
-                
-                const subTitle = document.createElement('h4');
-                const entryName = transferBtn.closest('.world_entry').querySelector('[name="comment"]').value ?? transferBtn.closest('.world_entry').querySelector('[name="key"]').value;
-                const bookName = document.querySelector('#world_editor_select').selectedOptions[0].textContent;
-                subTitle.textContent = `${bookName}: ${entryName}`;
-                dom.append(subTitle);
-                
-                sel = document.querySelector('#world_editor_select').cloneNode(true);
-                sel.classList.add('wi-world-select');
-                sel.value = document.querySelector('#world_editor_select').value;
-                sel.addEventListener('keyup', (evt) => {
-                    if (evt.key == 'Shift') {
-                        (dlg.dom ?? dlg.dlg).classList.remove('wi-is-copy');
-                        return;
-                    }
-                });
-                sel.addEventListener('keydown', (evt) => {
-                    if (evt.key == 'Shift') {
-                        (dlg.dom ?? dlg.dlg).classList.add('wi-is-copy');
-                        return;
-                    }
-                    if (!evt.ctrlKey && !evt.altKey && evt.key == 'Enter') {
-                        evt.preventDefault();
-                        if (evt.shiftKey) isCopy = true;
-                        dlg.completeAffirmative();
-                    }
-                });
-                dom.append(sel);
-                
-                const hintP = document.createElement('p');
-                const hint = document.createElement('small');
-                hint.textContent = 'Select the destination book and click Copy to duplicate this entry.';
-                hintP.append(hint);
-                dom.append(hintP);
-                
-                const dlg = new Popup(dom, POPUP_TYPE.CONFIRM, null, { okButton: 'Copy', cancelButton: 'Cancel' });
-                // Always set isCopy to true since we only support copying now
-                isCopy = true;
-                
-                const prom = dlg.show();
-                sel.focus();
-                await prom;
-                
-                if (dlg.result == POPUP_RESULT.AFFIRMATIVE) {
-                    toastr.info('Copying WI Entry');
-                    const srcName = document.querySelector('#world_editor_select').selectedOptions[0].textContent;
-                    const dstName = sel.selectedOptions[0].textContent;
-                    if (srcName == dstName) {
-                        toastr.warning(`Entry is already in book "${dstName}"`);
-                        return;
-                    }
-                    
-                    let page = document.querySelector('#world_info_pagination .paginationjs-prev[data-num]')?.getAttribute('data-num');
-                    if (page === undefined) {
-                        page = document.querySelector('#world_info_pagination .paginationjs-next[data-num]')?.getAttribute('data-num');
-                        if (page !== undefined) {
-                            page = (Number(page) - 1).toString();
-                        }
-                    } else {
-                        page = (Number(page) + 1).toString();
-                    }
-                    
-                    const [srcBook, dstBook] = await Promise.all([
-                        loadWorldInfo(srcName),
-                        loadWorldInfo(dstName),
-                    ]);
-                    
-                    if (srcBook && dstBook) {
-                        const srcEntry = srcBook.entries[uid];
-                        const oData = Object.assign({}, srcEntry);
-                        delete oData.uid;
-                        const dstEntry = createWorldInfoEntry(null, dstBook);
-                        Object.assign(dstEntry, oData);
-                        await saveWorldInfo(dstName, dstBook, true);
-                        
-                        if (!isCopy) {
-                            const deleted = await deleteWorldInfoEntry(srcBook, uid, { silent: true });
-                            if (deleted) {
-                                deleteWIOriginalDataValue(srcBook, uid);
-                                await saveWorldInfo(srcName, srcBook, true);
-                            }
-                        }
-                        
-                        toastr.info('Almost copied...');
-                        document.querySelector('#world_editor_select').value = '';
-                        document.querySelector('#world_editor_select').dispatchEvent(new Event('change', { bubbles: true }));
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        document.querySelector('#world_editor_select').value = [...document.querySelector('#world_editor_select').children].find(it => it.textContent == srcName).value;
-                        let saveProm = new Promise(resolve => eventSource.once(event_types.WORLDINFO_UPDATED, resolve));
-                        document.querySelector('#world_editor_select').dispatchEvent(new Event('change', { bubbles: true }));
-                        await saveProm;
-                        
-                        if (page !== undefined) {
-                            saveProm = new Promise(resolve => eventSource.once(event_types.WORLDINFO_UPDATED, resolve));
-                            document.querySelector('#world_info_pagination .paginationjs-next').setAttribute('data-num', page.toString());
-                            document.querySelector('#world_info_pagination .paginationjs-next').click();
-                            await saveProm;
-                        }
-                        toastr.success('Copied WI Entry');
-                    } else {
-                        toastr.error('Something went wrong');
-                    }
-                }
-            });
-        }
-    });
-    mo.observe(document.querySelector('#world_popup_entries_list'), { childList: true, subtree: true });
-};
-
-// ======================== END PRESETS AND TRANSFER SYSTEMS ========================
 
 export function initWorldInfo() {
     $('#world_info').on('mousedown change', async function (e) {
@@ -6571,6 +6116,14 @@ export function initWorldInfo() {
 
     // Not needed on mobile
     if (!isMobile()) {
+        $('#world_editor_select').select2({
+            placeholder: t`--- Pick to Edit ---`,
+            searchInputPlaceholder: t`Search...`,
+            allowClear: true,
+            closeOnSelect: true,
+            multiple: false,
+        });
+
         $('#world_info').select2({
             width: '100%',
             placeholder: t`No Worlds active. Click here to select.`,
@@ -6601,25 +6154,4 @@ export function initWorldInfo() {
             }
         });
     });
-    
-    // Register slash command for presets
-    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-        name: 'wipreset',
-        callback: (args, value) => {
-            activateWIPresetByName(value);
-        },
-        unnamedArgumentList: [
-            SlashCommandArgument.fromProps({
-                description: 'preset name',
-                typeList: [ARGUMENT_TYPE.STRING],
-                isRequired: false,
-            }),
-        ],
-        helpString: 'Activate a World Info preset. Leave name blank to deactivate current preset (unload all WI books).',
-        aliases: ['worldinfopreset'],
-    }));
-
-    // Initialize presets and transfer functionality
-    initWIPresets();
-    initWITransfer();
 }

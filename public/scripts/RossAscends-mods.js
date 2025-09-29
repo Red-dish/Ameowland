@@ -111,12 +111,12 @@ export function humanizeGenTime(total_gen_time) {
     let hours = time_spent % 24;
     time_spent = Math.floor(time_spent / 24);
     let days = time_spent;
-    time_spent = '';
-    if (days > 0) { time_spent += `${days} Days, `; }
-    if (hours > 0) { time_spent += `${hours} Hours, `; }
-    if (minutes > 0) { time_spent += `${minutes} Minutes, `; }
-    time_spent += `${seconds} Seconds`;
-    return time_spent;
+    let result = '';
+    if (days > 0) { result += `${days} Days, `; }
+    if (hours > 0) { result += `${hours} Hours, `; }
+    if (minutes > 0) { result += `${minutes} Minutes, `; }
+    result += `${seconds} Seconds`;
+    return result;
 }
 
 /**
@@ -276,40 +276,36 @@ export async function RA_CountCharTokens() {
  * The character or group is selected (clicked) if it is found.
  */
 async function RA_autoloadchat() {
-    if (document.querySelector('#rm_print_characters_block .character_select') !== null) {
-        // active character is the name, we should look it up in the character list and get the id
-        if (active_character !== null && active_character !== undefined) {
-            const active_character_id = characters.findIndex(x => getTagKeyForEntity(x) === active_character);
-            if (active_character_id !== -1) {
-                await selectCharacterById(active_character_id);
+    // active character is the name, we should look it up in the character list and get the id
+    if (active_character !== null && active_character !== undefined) {
+        const active_character_id = characters.findIndex(x => getTagKeyForEntity(x) === active_character);
+        if (active_character_id !== -1) {
+            await selectCharacterById(active_character_id);
 
-                // Do a little tomfoolery to spoof the tag selector
-                const selectedCharElement = $(`#rm_print_characters_block .character_select[chid="${active_character_id}"]`);
-                applyTagsOnCharacterSelect.call(selectedCharElement);
-            } else {
-                setActiveCharacter(null);
-                saveSettingsDebounced();
-                console.warn(`Currently active character with ID ${active_character} not found. Resetting to no active character.`);
-            }
+            // Do a little tomfoolery to spoof the tag selector
+            const selectedCharElement = $(`#rm_print_characters_block .character_select[chid="${active_character_id}"]`);
+            applyTagsOnCharacterSelect.call(selectedCharElement);
+        } else {
+            setActiveCharacter(null);
+            saveSettingsDebounced();
+            console.warn(`Currently active character with ID ${active_character} not found. Resetting to no active character.`);
         }
+    }
 
-        if (active_group !== null && active_group !== undefined) {
-            if (active_character) {
-                console.warn('Active character and active group are both set. Only active character will be loaded. Resetting active group.');
+    if (active_group !== null && active_group !== undefined) {
+        if (active_character) {
+            console.warn('Active character and active group are both set. Only active character will be loaded. Resetting active group.');
+            setActiveGroup(null);
+            saveSettingsDebounced();
+        } else {
+            const result = await openGroupById(String(active_group));
+            if (!result) {
                 setActiveGroup(null);
                 saveSettingsDebounced();
-            } else {
-                const result = await openGroupById(String(active_group));
-                if (!result) {
-                    setActiveGroup(null);
-                    saveSettingsDebounced();
-                    console.warn(`Currently active group with ID ${active_group} not found. Resetting to no active group.`);
-                }
+                console.warn(`Currently active group with ID ${active_group} not found. Resetting to no active group.`);
             }
         }
-
-        // if the character list hadn't been loaded yet, try again.
-    } else { setTimeout(RA_autoloadchat, 100); }
+    }
 }
 
 export async function favsToHotswap() {
@@ -406,13 +402,17 @@ function RA_autoconnect(PrevApi) {
                     || (secret_state[SECRET_KEYS.COHERE] && oai_settings.chat_completion_source == chat_completion_sources.COHERE)
                     || (secret_state[SECRET_KEYS.PERPLEXITY] && oai_settings.chat_completion_source == chat_completion_sources.PERPLEXITY)
                     || (secret_state[SECRET_KEYS.GROQ] && oai_settings.chat_completion_source == chat_completion_sources.GROQ)
-                    || (secret_state[SECRET_KEYS.ZEROONEAI] && oai_settings.chat_completion_source == chat_completion_sources.ZEROONEAI)
+                    || (secret_state[SECRET_KEYS.ELECTRONHUB] && oai_settings.chat_completion_source == chat_completion_sources.ELECTRONHUB)
                     || (secret_state[SECRET_KEYS.NANOGPT] && oai_settings.chat_completion_source == chat_completion_sources.NANOGPT)
                     || (secret_state[SECRET_KEYS.DEEPSEEK] && oai_settings.chat_completion_source == chat_completion_sources.DEEPSEEK)
                     || (secret_state[SECRET_KEYS.XAI] && oai_settings.chat_completion_source == chat_completion_sources.XAI)
                     || (secret_state[SECRET_KEYS.AIMLAPI] && oai_settings.chat_completion_source == chat_completion_sources.AIMLAPI)
+                    || (secret_state[SECRET_KEYS.MOONSHOT] && oai_settings.chat_completion_source == chat_completion_sources.MOONSHOT)
+                    || (secret_state[SECRET_KEYS.FIREWORKS] && oai_settings.chat_completion_source == chat_completion_sources.FIREWORKS)
+                    || (secret_state[SECRET_KEYS.COMETAPI] && oai_settings.chat_completion_source == chat_completion_sources.COMETAPI)
                     || (oai_settings.chat_completion_source === chat_completion_sources.POLLINATIONS)
                     || (isValidUrl(oai_settings.custom_url) && oai_settings.chat_completion_source == chat_completion_sources.CUSTOM)
+                    || (secret_state[SECRET_KEYS.AZURE_OPENAI] && oai_settings.chat_completion_source == chat_completion_sources.AZURE_OPENAI)
                 ) {
                     $('#api_button_openai').trigger('click');
                 }
@@ -482,8 +482,7 @@ export function dragElement($elmnt) {
 
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     let height, width, top, left, right, bottom,
-        maxX, maxY, winHeight, winWidth,
-        topbar, topBarFirstX, topBarLastY;
+        maxX, maxY, winHeight, winWidth;
 
     const elmntName = $elmnt.attr('id');
     const elmntNameEscaped = $.escapeSelector(elmntName);
@@ -529,7 +528,8 @@ export function dragElement($elmnt) {
             return;
         }
 
-        const style = getComputedStyle($target[0]);
+        const element = /** @type {HTMLElement} */ ($target[0]);
+        const style = getComputedStyle(element);
         height = parseInt(style.height);
         width = parseInt(style.width);
         top = parseInt(style.top);
@@ -540,11 +540,6 @@ export function dragElement($elmnt) {
         maxY = height + top;
         winWidth = window.innerWidth;
         winHeight = window.innerHeight;
-
-        topbar = document.getElementById('top-bar');
-        const topbarstyle = getComputedStyle(topbar);
-        topBarFirstX = parseInt(topbarstyle.marginInline);
-        topBarLastY = parseInt(topbarstyle.height);
 
         // Prepare state object if missing
         if (!power_user.movingUIState[elmntName]) power_user.movingUIState[elmntName] = {};
@@ -572,9 +567,9 @@ export function dragElement($elmnt) {
                 if (top + $elmnt.height() >= winHeight) $elmnt.css('height', winHeight - top - 1 + 'px');
                 if (left + $elmnt.width() >= winWidth) $elmnt.css('width', winWidth - left - 1 + 'px');
             }
-            if (top < topBarLastY && maxX >= topBarFirstX && left <= topBarFirstX) {
-                $elmnt.css('width', width - 1 + 'px');
-            }
+            //if (top < topBarLastY && maxX >= topBarFirstX && left <= topBarFirstX) {
+            //    $elmnt.css('width', width - 1 + 'px');
+            // }
             $elmnt.css({ left, top });
             $elmnt.off('mouseup').on('mouseup', () => {
                 if (
@@ -771,44 +766,47 @@ export function initRossMods() {
         }
     });
 
-    // read the state of right Nav Lock and apply to rightnav classlist
-    $(RPanelPin).prop('checked', accountStorage.getItem('NavLockOn') == 'true');
-    if (accountStorage.getItem('NavLockOn') == 'true') {
-        //console.log('setting pin class via local var');
-        $(RightNavPanel).addClass('pinnedOpen');
-        $(RightNavDrawerIcon).addClass('drawerPinnedOpen');
-    }
-    if ($(RPanelPin).prop('checked')) {
-        console.debug('setting pin class via checkbox state');
-        $(RightNavPanel).addClass('pinnedOpen');
-        $(RightNavDrawerIcon).addClass('drawerPinnedOpen');
-    }
-    // read the state of left Nav Lock and apply to leftnav classlist
-    $(LPanelPin).prop('checked', accountStorage.getItem('LNavLockOn') === 'true');
-    if (accountStorage.getItem('LNavLockOn') == 'true') {
-        //console.log('setting pin class via local var');
-        $(LeftNavPanel).addClass('pinnedOpen');
-        $(LeftNavDrawerIcon).addClass('drawerPinnedOpen');
-    }
-    if ($(LPanelPin).prop('checked')) {
-        console.debug('setting pin class via checkbox state');
-        $(LeftNavPanel).addClass('pinnedOpen');
-        $(LeftNavDrawerIcon).addClass('drawerPinnedOpen');
+    if (!isMobile()) { //only read/set pin states on non-mobile devices
+        // read the state of right Nav Lock and apply to rightnav classlist
+        $(RPanelPin).prop('checked', accountStorage.getItem('NavLockOn') == 'true');
+        if (accountStorage.getItem('NavLockOn') == 'true') {
+            //console.log('setting pin class via local var');
+            $(RightNavPanel).addClass('pinnedOpen');
+            $(RightNavDrawerIcon).addClass('drawerPinnedOpen');
+        }
+        if ($(RPanelPin).prop('checked')) {
+            console.debug('setting pin class via checkbox state');
+            $(RightNavPanel).addClass('pinnedOpen');
+            $(RightNavDrawerIcon).addClass('drawerPinnedOpen');
+        }
+        // read the state of left Nav Lock and apply to leftnav classlist
+        $(LPanelPin).prop('checked', accountStorage.getItem('LNavLockOn') === 'true');
+        if (accountStorage.getItem('LNavLockOn') == 'true') {
+            //console.log('setting pin class via local var');
+            $(LeftNavPanel).addClass('pinnedOpen');
+            $(LeftNavDrawerIcon).addClass('drawerPinnedOpen');
+        }
+        if ($(LPanelPin).prop('checked')) {
+            console.debug('setting pin class via checkbox state');
+            $(LeftNavPanel).addClass('pinnedOpen');
+            $(LeftNavDrawerIcon).addClass('drawerPinnedOpen');
+        }
+
+        // read the state of left Nav Lock and apply to leftnav classlist
+        $(WIPanelPin).prop('checked', accountStorage.getItem('WINavLockOn') === 'true');
+        if (accountStorage.getItem('WINavLockOn') == 'true') {
+            //console.log('setting pin class via local var');
+            $(WorldInfo).addClass('pinnedOpen');
+            $(WIDrawerIcon).addClass('drawerPinnedOpen');
+        }
+
+        if ($(WIPanelPin).prop('checked')) {
+            console.debug('setting pin class via checkbox state');
+            $(WorldInfo).addClass('pinnedOpen');
+            $(WIDrawerIcon).addClass('drawerPinnedOpen');
+        }
     }
 
-    // read the state of left Nav Lock and apply to leftnav classlist
-    $(WIPanelPin).prop('checked', accountStorage.getItem('WINavLockOn') === 'true');
-    if (accountStorage.getItem('WINavLockOn') == 'true') {
-        //console.log('setting pin class via local var');
-        $(WorldInfo).addClass('pinnedOpen');
-        $(WIDrawerIcon).addClass('drawerPinnedOpen');
-    }
-
-    if ($(WIPanelPin).prop('checked')) {
-        console.debug('setting pin class via checkbox state');
-        $(WorldInfo).addClass('pinnedOpen');
-        $(WIDrawerIcon).addClass('drawerPinnedOpen');
-    }
 
     //save state of Right nav being open or closed
     $('#rightNavDrawerIcon').on('click', function () {
@@ -1067,6 +1065,19 @@ export function initRossMods() {
                     $('#option_regenerate').trigger('click');
                     $('#options').hide();
                 }
+
+                // If there is input text, we do not trigger a regenerate - we just send it
+                if ($('#send_textarea').val() !== '') {
+                    if (shouldSendOnEnter()) {
+                        console.debug('Sending with Ctrl+Enter');
+                        event.preventDefault();
+                        sendTextareaMessage();
+                    } else {
+                        console.debug('Text area is not empty, but send on enter is disabled');
+                    }
+                    return;
+                }
+
                 if (skipConfirm) {
                     doRegenerate();
                 } else {

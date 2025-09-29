@@ -61,10 +61,6 @@ router.post('/caption-image', async (request, response) => {
             key = readSecret(request.user.directories, SECRET_KEYS.VLLM);
         }
 
-        if (request.body.api === 'zerooneai') {
-            key = readSecret(request.user.directories, SECRET_KEYS.ZEROONEAI);
-        }
-
         if (request.body.api === 'aimlapi') {
             key = readSecret(request.user.directories, SECRET_KEYS.AIMLAPI);
         }
@@ -75,6 +71,18 @@ router.post('/caption-image', async (request, response) => {
 
         if (request.body.api === 'cohere') {
             key = readSecret(request.user.directories, SECRET_KEYS.COHERE);
+        }
+
+        if (request.body.api === 'moonshot') {
+            key = readSecret(request.user.directories, SECRET_KEYS.MOONSHOT);
+        }
+
+        if (request.body.api === 'nanogpt') {
+            key = readSecret(request.user.directories, SECRET_KEYS.NANOGPT);
+        }
+
+        if (request.body.api === 'electronhub') {
+            key = readSecret(request.user.directories, SECRET_KEYS.ELECTRONHUB);
         }
 
         const noKeyTypes = ['custom', 'ooba', 'koboldcpp', 'vllm', 'llamacpp', 'pollinations'];
@@ -128,10 +136,6 @@ router.post('/caption-image', async (request, response) => {
             apiUrl = `${request.body.server_url}/chat/completions`;
         }
 
-        if (request.body.api === 'zerooneai') {
-            apiUrl = 'https://api.lingyiwanwu.com/v1/chat/completions';
-        }
-
         if (request.body.api === 'aimlapi') {
             apiUrl = 'https://api.aimlapi.com/v1/chat/completions';
             Object.assign(headers, AIMLAPI_HEADERS);
@@ -159,6 +163,18 @@ router.post('/caption-image', async (request, response) => {
         if (request.body.api === 'pollinations') {
             headers = { Authorization: '' };
             apiUrl = 'https://text.pollinations.ai/openai/chat/completions';
+        }
+
+        if (request.body.api === 'moonshot') {
+            apiUrl = 'https://api.moonshot.ai/v1/chat/completions';
+        }
+
+        if (request.body.api === 'nanogpt') {
+            apiUrl = 'https://nano-gpt.com/api/v1/chat/completions';
+        }
+
+        if (request.body.api === 'electronhub') {
+            apiUrl = 'https://api.electronhub.ai/v1/chat/completions';
         }
 
         if (['koboldcpp', 'vllm', 'llamacpp', 'ooba'].includes(request.body.api)) {
@@ -271,19 +287,27 @@ router.post('/generate-voice', async (request, response) => {
             return response.sendStatus(400);
         }
 
+        const requestBody = {
+            input: request.body.text,
+            response_format: 'mp3',
+            voice: request.body.voice ?? 'alloy',
+            speed: request.body.speed ?? 1,
+            model: request.body.model ?? 'tts-1',
+        };
+
+        if (request.body.instructions) {
+            requestBody.instructions = request.body.instructions;
+        }
+
+        console.debug('OpenAI TTS request', requestBody);
+
         const result = await fetch('https://api.openai.com/v1/audio/speech', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${key}`,
             },
-            body: JSON.stringify({
-                input: request.body.text,
-                response_format: 'mp3',
-                voice: request.body.voice ?? 'alloy',
-                speed: request.body.speed ?? 1,
-                model: request.body.model ?? 'tts-1',
-            }),
+            body: JSON.stringify(requestBody),
         });
 
         if (!result.ok) {
@@ -297,6 +321,104 @@ router.post('/generate-voice', async (request, response) => {
         return response.send(Buffer.from(buffer));
     } catch (error) {
         console.error('OpenAI TTS generation failed', error);
+        response.status(500).send('Internal server error');
+    }
+});
+
+// ElectronHub TTS proxy
+router.post('/electronhub/generate-voice', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.ELECTRONHUB);
+
+        if (!key) {
+            console.warn('No ElectronHub key found');
+            return response.sendStatus(400);
+        }
+
+        const requestBody = {
+            input: request.body.input,
+            voice: request.body.voice,
+            speed: request.body.speed ?? 1,
+            temperature: request.body.temperature ?? undefined,
+            model: request.body.model || 'tts-1',
+            response_format: 'mp3',
+        };
+
+        // Optional provider-specific params
+        if (request.body.instructions) requestBody.instructions = request.body.instructions;
+        if (request.body.speaker_transcript) requestBody.speaker_transcript = request.body.speaker_transcript;
+        if (Number.isFinite(request.body.cfg_scale)) requestBody.cfg_scale = Number(request.body.cfg_scale);
+        if (Number.isFinite(request.body.cfg_filter_top_k)) requestBody.cfg_filter_top_k = Number(request.body.cfg_filter_top_k);
+        if (Number.isFinite(request.body.speech_rate)) requestBody.speech_rate = Number(request.body.speech_rate);
+        if (Number.isFinite(request.body.pitch_adjustment)) requestBody.pitch_adjustment = Number(request.body.pitch_adjustment);
+        if (request.body.emotional_style) requestBody.emotional_style = request.body.emotional_style;
+
+        // Handle dynamic parameters sent from the frontend
+        const knownParams = new Set(Object.keys(requestBody));
+        for (const key in request.body) {
+            if (!knownParams.has(key) && request.body[key] !== undefined) {
+                requestBody[key] = request.body[key];
+            }
+        }
+
+        // Clean undefineds
+        Object.keys(requestBody).forEach(k => requestBody[k] === undefined && delete requestBody[k]);
+
+        console.debug('ElectronHub TTS request', requestBody);
+
+        const result = await fetch('https://api.electronhub.ai/v1/audio/speech', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${key}`,
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!result.ok) {
+            const text = await result.text();
+            console.warn('ElectronHub TTS request failed', result.statusText, text);
+            return response.status(500).send(text);
+        }
+
+        const contentType = result.headers.get('content-type') || 'audio/mpeg';
+        const buffer = await result.arrayBuffer();
+        response.setHeader('Content-Type', contentType);
+        return response.send(Buffer.from(buffer));
+    } catch (error) {
+        console.error('ElectronHub TTS generation failed', error);
+        response.status(500).send('Internal server error');
+    }
+});
+
+// ElectronHub model list
+router.post('/electronhub/models', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.ELECTRONHUB);
+
+        if (!key) {
+            console.warn('No ElectronHub key found');
+            return response.sendStatus(400);
+        }
+
+        const result = await fetch('https://api.electronhub.ai/v1/models', {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${key}`,
+            },
+        });
+
+        if (!result.ok) {
+            const text = await result.text();
+            console.warn('ElectronHub models request failed', result.statusText, text);
+            return response.status(500).send(text);
+        }
+
+        const data = await result.json();
+        const models = data && Array.isArray(data['data']) ? data['data'] : [];
+        return response.json(models);
+    } catch (error) {
+        console.error('ElectronHub models fetch failed', error);
         response.status(500).send('Internal server error');
     }
 });

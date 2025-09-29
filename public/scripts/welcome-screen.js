@@ -18,7 +18,10 @@ import {
     openCharacterChat,
     printCharactersDebounced,
     renameGroupOrCharacterChat,
+    saveSettingsDebounced,
     selectCharacterById,
+    setActiveCharacter,
+    setActiveGroup,
     system_avatar,
     system_message_types,
     this_chid,
@@ -107,7 +110,7 @@ async function unshallowPermanentAssistant() {
  * @returns {string} Greeting message
 */
 function getAssistantGreeting(character) {
-    const defaultGreeting = t`If you're connected to an API, try asking me something!`;
+    const defaultGreeting = t`If you're connected to an API, try asking me something!` + '\n***\n' + t`**Hint:** Set any character as your welcome page assistant from their "More..." menu.`;
 
     if (!character) {
         return defaultGreeting;
@@ -131,6 +134,7 @@ function sendAssistantMessage() {
         <br>✦ Don't be afraid to ask for help in the discord! ദ്ദി(ᵔᗜᵔ)</p>`  + '\n***\n'+ t`Hint: Set any character as your welcome page assistant from their "More..." menu.`,
         is_system: false,
         is_user: false,
+        send_date: getMessageTimeStamp(),
         extra: {
             type: system_message_types.ASSISTANT_MESSAGE,
         },
@@ -297,6 +301,8 @@ async function openRecentCharacterChat(avatarId, fileName) {
 
     try {
         await selectCharacterById(characterId);
+        setActiveCharacter(avatarId);
+        saveSettingsDebounced();
         const currentChatId = getCurrentChatId();
         if (currentChatId === fileName) {
             console.debug(`Chat ${fileName} is already open.`);
@@ -323,6 +329,8 @@ async function openRecentGroupChat(groupId, fileName) {
 
     try {
         await openGroupById(groupId);
+        setActiveGroup(groupId);
+        saveSettingsDebounced();
         const currentChatId = getCurrentChatId();
         if (currentChatId === fileName) {
             console.debug(`Chat ${fileName} is already open.`);
@@ -578,12 +586,9 @@ async function createPermanentAssistant() {
         console.warn('Error fetching system avatar. Fallback image will be used.', error);
     }
 
-    const headers = getRequestHeaders();
-    delete headers['Content-Type'];
-
     const fetchResult = await fetch('/api/characters/create', {
         method: 'POST',
-        headers: headers,
+        headers: getRequestHeaders({ omitContentType: true }),
         body: formData,
         cache: 'no-cache',
     });

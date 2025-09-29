@@ -45,6 +45,7 @@ import { router as koboldRouter } from './endpoints/backends/kobold.js';
 import { router as textCompletionsRouter } from './endpoints/backends/text-completions.js';
 import { router as speechRouter } from './endpoints/speech.js';
 import { router as azureRouter } from './endpoints/azure.js';
+import { router as minimaxRouter } from './endpoints/minimax.js';
 import { router as dataMaidRouter } from './endpoints/data-maid.js';
 
 /**
@@ -172,6 +173,7 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/backends/chat-completions', chatCompletionsRouter);
     app.use('/api/speech', speechRouter);
     app.use('/api/azure', azureRouter);
+    app.use('/api/minimax', minimaxRouter);
     app.use('/api/data-maid', dataMaidRouter);
 }
 
@@ -231,9 +233,11 @@ export class ServerStartup {
     #createHttpsServer(url, ipVersion) {
         this.#verifySslOptions();
         return new Promise((resolve, reject) => {
+            /** @type {import('https').ServerOptions} */
             const sslOptions = {
                 cert: fs.readFileSync(this.cliArgs.certPath),
                 key: fs.readFileSync(this.cliArgs.keyPath),
+                passphrase: String(this.cliArgs.keyPassphrase ?? ''),
             };
             const server = https.createServer(sslOptions, this.app);
             server.on('error', reject);

@@ -349,7 +349,7 @@ input[type='checkbox']:focus-visible {
 
 #spoiler_free_desc_button{
     margin-right: 1em;
-    opacity: 0.05;
+    opacity: 0.00;
     transition: 200ms;
             &:hover {
         opacity: 1;

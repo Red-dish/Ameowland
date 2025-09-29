@@ -41,11 +41,11 @@ export const SECRET_KEYS = {
     GROQ: 'api_key_groq',
     AZURE_TTS: 'api_key_azure_tts',
     FEATHERLESS: 'api_key_featherless',
-    ZEROONEAI: 'api_key_01ai',
     HUGGINGFACE: 'api_key_huggingface',
     STABILITY: 'api_key_stability',
     CUSTOM_OPENAI_TTS: 'api_key_custom_openai_tts',
     TAVILY: 'api_key_tavily',
+    ELECTRONHUB: 'api_key_electronhub',
     NANOGPT: 'api_key_nanogpt',
     BFL: 'api_key_bfl',
     FALAI: 'api_key_falai',
@@ -54,7 +54,13 @@ export const SECRET_KEYS = {
     SERPER: 'api_key_serper',
     AIMLAPI: 'api_key_aimlapi',
     XAI: 'api_key_xai',
+    FIREWORKS: 'api_key_fireworks',
     VERTEXAI_SERVICE_ACCOUNT: 'vertexai_service_account_json',
+    MINIMAX: 'api_key_minimax',
+    MINIMAX_GROUP_ID: 'minimax_group_id',
+    MOONSHOT: 'api_key_moonshot',
+    COMETAPI: 'api_key_cometapi',
+    AZURE_OPENAI: 'api_key_azure_openai',
 };
 
 /**
