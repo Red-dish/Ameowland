@@ -617,7 +617,7 @@
                                 </div>
                             </div>
                             <div id="range_block_openai">
-                                <div class="range-block" data-source="openai,claude,windowai,openrouter,ai21,scale,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,01ai,nanogpt,deepseek,xai">
+                                <div class="range-block" data-source="openai,claude,aimlapi,openrouter,ai21,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,electronhub,nanogpt,deepseek,xai,pollinations,moonshot,fireworks,cometapi,azure_openai">
                                         <div class="range-block-title" data-i18n="Temperature">
                                             Temperature
                                         </div>
@@ -693,7 +693,7 @@
                                         </span>
                                     </div>
                                 </div>
-                                <div class="range-block" data-source="openai,claude,aimlapi,openrouter,ai21,makersuite,vertexai,mistralai,custom,cohere,perplexity,groq,electronhub,nanogpt,deepseek,xai,pollinations,moonshot,fireworks,cometapi,azure_openai">
+                                <div class="range-block" data-source="openai,aimlapi,openrouter,mistralai,makersuite,vertexai,claude,custom,xai,pollinations,moonshot,cohere,cometapi,nanogpt,electronhub,azure_openai">
                                     <label for="openai_image_inlining" class="checkbox_label flexWrap widthFreeExpand">
                                         <input id="openai_image_inlining" type="checkbox" />
                                         <span data-i18n="Send inline images">Allow AI to read and send images</span></span>
@@ -2041,35 +2041,6 @@
                                             <span data-i18n="enable_functions_desc_1">Allows using </span><a href="https://platform.openai.com/docs/guides/function-calling" target="_blank" data-i18n="enable_functions_desc_2">function tools</a>.
                                             <span data-i18n="enable_functions_desc_3">Can be utilized by various extensions to provide additional functionality.</span>
                                             <strong data-i18n="enable_functions_desc_4">Not supported when Prompt Post-Processing with "no tools" is used!</strong>
-                                        </div>
-                                    </div>
-                                    <div class="range-block" data-source="openai,aimlapi,openrouter,mistralai,makersuite,vertexai,claude,custom,xai,pollinations,moonshot,cohere,cometapi,nanogpt,electronhub,azure_openai">
-                                        <label for="openai_image_inlining" class="checkbox_label flexWrap widthFreeExpand">
-                                            <input id="openai_image_inlining" type="checkbox" />
-                                            <span data-i18n="Send inline images">Send inline images</span>
-                                            <div id="openai_image_inlining_supported" data-cc-toggle="false">
-                                                <i class="icon-supported fa-solid fa-circle-check" title="Supported by the current model" data-i18n="[title]Supported by the current model"></i>
-                                                <i class="icon-unsupported fa-solid fa-circle-exclamation" title="Unsupported by the current model" data-i18n="[title]Unsupported by the current model"></i>
-                                            </div>
-                                        </label>
-                                        <div id="image_inlining_hint" class="flexBasis100p toggle-description justifyLeft">
-                                            <span data-i18n="image_inlining_hint_1">Sends images in prompts if the model supports it. Use the</span>
-                                            <code><i class="fa-solid fa-paperclip"></i></code>
-                                            <span data-i18n="image_inlining_hint_2">action on any message or the</span>
-                                            <code><i class="fa-solid fa-wand-magic-sparkles"></i></code>
-                                            <span data-i18n="image_inlining_hint_3">menu to attach an image file to the chat.</span>
-                                        </div>
-                                        <div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,xai,pollinations,cohere,cometapi,nanogpt,moonshot,aimlapi,openrouter,mistralai,electronhub,azure_openai">
-                                            <div class="flex-container oneline-dropdown">
-                                                <label for="openai_inline_image_quality" data-i18n="Inline Image Quality">
-                                                    Inline Image Quality
-                                                </label>
-                                                <select id="openai_inline_image_quality">
-                                                    <option data-i18n="openai_inline_image_quality_auto" value="auto">Auto</option>
-                                                    <option data-i18n="openai_inline_image_quality_low" value="low">Low</option>
-                                                    <option data-i18n="openai_inline_image_quality_high" value="high">High</option>
-                                                </select>
-                                            </div>
                                         </div>
                                     </div>
                                     <div class="range-block" data-source="makersuite,vertexai">
@@ -3797,7 +3768,7 @@
                 </div>
             </div>
         </div>
-        <div style="display:none;" id="advanced-formatting-button" class="drawer">
+        <div id="advanced-formatting-button" class="drawer">
             <div class="drawer-toggle">
                 <div class="drawer-icon fa-solid fa-font fa-fw closedIcon" title="AI Response Formatting" data-i18n="[title]AI Response Formatting"></div>
             </div>
@@ -5366,7 +5337,7 @@
                 </form>
             </div>
         </div>
-        <div style="display:none" id="extensions-settings-button" class="drawer">
+        <div id="extensions-settings-button" class="drawer">
             <div class="drawer-toggle">
                 <div class="drawer-icon fa-solid fa-cubes fa-fw closedIcon" title="Extensions" data-i18n="[title]Extensions"></div>
             </div>
@@ -6157,7 +6128,7 @@
                 </div>
             </div>
             <hr>
-            <div style="display:none" id="personality_div">
+            <div id="personality_div">
                 <h4 class="flex-container alignItemsBaseline">
                     <span data-i18n="Personality summary">Personality summary</span>
                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="personality_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
@@ -6168,7 +6139,7 @@
                     <span data-i18n="extension_token_counter">Tokens:</span> <span data-token-counter="personality_textarea" data-token-permanent="true">counting...</span>
                 </div>
             </div>
-            <div style="display:none" id="scenario_div">
+            <div id="scenario_div">
                 <h4 class="flex-container alignItemsBaseline">
                     <span data-i18n="Scenario">Scenario</span>
                     <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="scenario_pole" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
@@ -6181,7 +6152,7 @@
                     <span data-i18n="extension_token_counter">Tokens:</span> <span data-token-counter="scenario_pole" data-token-permanent="true">counting...</span>
                 </div>
             </div>
-            <div style="display:none" id="depth_prompt_div" class="flex-container">
+            <div id="depth_prompt_div" class="flex-container">
                 <div class="flex1">
                     <h4 class="flex-container alignItemsBaseline">
                         <span data-i18n="Character's Note">
@@ -6213,7 +6184,7 @@
                     </div>
                 </div>
             </div>
-            <div style="display:none" id="talkativeness_div">
+            <div id="talkativeness_div">
                 <h4><span data-i18n="Talkativeness">Talkativeness</span></h4>
                 <h5 data-i18n="How often the character speaks in group chats!"><!-- This data-i18n attribute on the left is kept for backward compatibility, use the ones below when translating -->
                     <span data-i18n="How often the character speaks in">How often the character speaks in</span>&nbsp;<span class="warning" data-i18n="group chats!">group chats!</span>
@@ -6226,7 +6197,7 @@
                 </div>
             </div>
             <hr>
-            <div style="display:none" id="mes_example_div" class="flex-container flexFlowColumn">
+            <div id="mes_example_div" class="flex-container flexFlowColumn">
                 <div>
                     <h4 class="flex-container alignItemsBaseline">
                         <span data-i18n="Examples of dialogue" class="mdhotkey_location">Examples of dialogue</span>
