@@ -1908,7 +1908,7 @@ export async function getGroupPastChats(groupId) {
     try {
         for (const chatId of group.chats) {
             const messages = await loadGroupChat(chatId);
-            let this_chat_file_size = (JSON.stringify(messages).length / 1024).toFixed(2) + 'kb';
+            let this_chat_file_size = (JSON.stringify(messages).length / 500000).toFixed(2) + 'kb';
             let chat_items = messages.length;
             const lastMessage = messages.length ? messages[messages.length - 1].mes : '[The chat is empty]';
             const lastMessageDate = messages.length ? (messages[messages.length - 1].send_date || Date.now()) : Date.now();
