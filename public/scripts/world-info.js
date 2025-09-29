@@ -26,7 +26,7 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
+    "default-user":["#hidden#-Xavier", "#hidden#-meows"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
@@ -34,7 +34,10 @@ const botmakersMap = {
     ],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
+    "retsukoh": [
+        "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami",
+        "bb-retsukoh-toji","bb-retsukoh-geto","bb-retsukoh-judas"
+    ],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
     "dreamweaver":["bb-dreamweaver-Venryk"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
