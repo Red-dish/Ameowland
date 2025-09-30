@@ -137,6 +137,7 @@ export const power_user = {
     streaming_fps: 30,
     smooth_streaming: false,
     smooth_streaming_speed: 50,
+    stream_fade_in: false,
 
     fast_ui_mode: true,
     avatar_style: avatar_styles.ROUND,
@@ -1685,6 +1686,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#smooth_streaming').prop('checked', power_user.smooth_streaming);
     $('#smooth_streaming_speed').val(power_user.smooth_streaming_speed);
 
+    $('#stream_fade_in').prop('checked', power_user.stream_fade_in);
     $('#font_scale').val(power_user.font_scale);
     $('#font_scale_counter').val(power_user.font_scale);
 
@@ -3492,6 +3494,13 @@ jQuery(() => {
         saveSettingsDebounced();
     });
 
+
+
+     $('#stream_fade_in').on('input', function () {
+        power_user.stream_fade_in = !!$(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    
     $('input[name="font_scale"]').on('input', async function (e, data) {
         const applyMode = data?.forced ? 'forced' : 'normal';
         power_user.font_scale = Number($(this).val());
