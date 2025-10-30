@@ -57,3 +57,4 @@ public/scripts/extensions/third-party
 yarn.lock
 node_modules
 SillyTavern-ModelsPresets/
+public/scripts/extensions/SillyTavern-Favorites
