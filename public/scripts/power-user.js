@@ -117,6 +117,7 @@ export const persona_description_positions = {
 };
 
 export const power_user = {
+    spoiler_free_mode: true,
     charListGrid: false,
     tokenizer: tokenizers.BEST_MATCH,
     token_padding: 64,
@@ -194,10 +195,10 @@ export const power_user = {
     timer_enabled: true,
     timestamps_enabled: true,
     timestamp_model_icon: false,
-    mesIDDisplay_enabled: false,
+    mesIDDisplay_enabled: true,
     hideChatAvatars_enabled: false,
     max_context_unlocked: false,
-    message_token_count_enabled: false,
+    message_token_count_enabled: true,
     expand_message_actions: false,
     enableZenSliders: false,
     enableLabMode: false,
@@ -205,7 +206,7 @@ export const power_user = {
     prefer_character_jailbreak: true,
     quick_continue: false,
     quick_impersonate: false,
-    continue_on_send: false,
+    continue_on_send: true,
     trim_spaces: true,
     relaxed_api_urls: false,
     world_import_dialog: true,

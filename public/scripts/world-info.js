@@ -29,10 +29,10 @@ const botmakersMap = {
     "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
-        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", 
+        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
         "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", "bb-hailey-Jett", "bb-hailey-Elias"
     ],
-    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha"],
+    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan"],
     "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
@@ -40,7 +40,8 @@ const botmakersMap = {
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"],
     "ravenh":["bb-ravenh-Ryker"],
-    "romarinpng":["bb-romarinpng-kaito"],
+    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling"],
+    "sapphira":["bb-sapphira-astinthorne"]
 };
 
 
@@ -170,7 +171,7 @@ export let world_info_depth = 2;
 export let world_info_min_activations = 0; // if > 0, will continue seeking chat until minimum world infos are activated
 export let world_info_min_activations_depth_max = 0; // used when (world_info_min_activations > 0)
 
-export let world_info_budget = 25;
+export let world_info_budget = 40;
 export let world_info_include_names = true;
 export let world_info_recursive = false;
 export let world_info_overflow_alert = false;
