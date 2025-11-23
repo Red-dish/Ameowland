@@ -55,6 +55,6 @@ public/scripts/extensions/third-party
 .env
 /StartDev.bat
 yarn.lock
+*.code-workspace
+test-results/
 node_modules
-SillyTavern-ModelsPresets/
-public/scripts/extensions/SillyTavern-Favorites
