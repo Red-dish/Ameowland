@@ -1,5 +1,5 @@
 import { localforage } from '../lib.js';
-import { characters, main_api, nai_settings, online_status, this_chid } from '../script.js';
+import { characters, event_types, eventSource, main_api, nai_settings, online_status, this_chid } from '../script.js';
 import { power_user, registerDebugFunction } from './power-user.js';
 import { chat_completion_sources, model_list, oai_settings } from './openai.js';
 import { groups, selected_group } from './group-chats.js';
@@ -699,6 +699,26 @@ export function getTokenizerModel() {
         }
     }
 
+    if (oai_settings.chat_completion_source == chat_completion_sources.CHUTES && oai_settings.chutes_model) {
+        const model = oai_settings.chutes_model.toLowerCase();
+
+        if (model.includes('deepseek') || model.includes('mai-ds')) {
+            return deepseekTokenizer;
+        } else if (model.includes('qwen') || model.includes('qwq') || model.includes('tongyi') || model.includes('kimi')) {
+            return qwen2Tokenizer;
+        } else if (model.includes('llama') || model.includes('longcat') || model.includes('hermes')) {
+            return llama3Tokenizer;
+        } else if (model.includes('gemma')) {
+            return gemmaTokenizer;
+        } else if (model.includes('nemo')) {
+            return nemoTokenizer;
+        } else if (model.includes('mistral')) {
+            return mistralTokenizer;
+        } else if (model.includes('gpt-oss')) {
+            return gpt4oTokenizer;
+        }
+    }
+
     if (oai_settings.chat_completion_source == chat_completion_sources.COHERE) {
         if (oai_settings.cohere_model.includes('command-a')) {
             return commandATokenizer;
@@ -1203,6 +1223,13 @@ export async function initTokenizers() {
         textgen_types.VLLM,
         textgen_types.APHRODITE,
     );
+    eventSource.on(event_types.ONLINE_STATUS_CHANGED, async () => {
+        // Clear tokenizer warning when (re)connecting to an LLM backend that supports tokenization
+        if (main_api === 'textgenerationwebui' && TEXTGEN_TOKENIZERS.includes(textgen_settings.type)) {
+            sessionStorage.removeItem(TOKENIZER_WARNING_KEY);
+        }
+    });
     await loadTokenCache();
     registerDebugFunction('resetTokenCache', 'Reset token cache', 'Purges the calculated token counts. Use this if you want to force a full re-tokenization of all chats or suspect the token counts are wrong.', resetTokenCache);
 }
+

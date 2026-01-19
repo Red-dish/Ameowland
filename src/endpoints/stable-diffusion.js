@@ -9,7 +9,7 @@ import FormData from 'form-data';
 import urlJoin from 'url-join';
 import _ from 'lodash';
 
-import { delay, getBasicAuthHeader, tryParse } from '../util.js';
+import { delay, getBasicAuthHeader, isValidUrl, tryParse } from '../util.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { AIMLAPI_HEADERS } from '../constants.js';
 
@@ -228,7 +228,7 @@ router.post('/get-model', async (request, response) => {
         });
         /** @type {any} */
         const data = await result.json();
-        return response.send(data['sd_model_checkpoint']);
+        return response.send(data.sd_model_checkpoint);
     } catch (error) {
         console.error(error);
         return response.sendStatus(500);
@@ -277,8 +277,8 @@ router.post('/set-model', async (request, response) => {
             /** @type {any} */
             const progressState = await getProgress();
 
-            const progress = progressState['progress'];
-            const jobCount = progressState['state']['job_count'];
+            const progress = progressState.progress;
+            const jobCount = progressState.state.job_count;
             if (progress === 0.0 && jobCount === 0) {
                 break;
             }
@@ -603,6 +603,108 @@ comfy.post('/generate', async (request, response) => {
     }
 });
 
+const comfyRunPod = express.Router();
+
+comfyRunPod.post('/ping', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.COMFY_RUNPOD);
+
+        if (!key) {
+            console.warn('RunPod key not found.');
+            return response.sendStatus(400);
+        }
+
+        const url = new URL(urlJoin(request.body.url, '/health'));
+
+        const result = await fetch(url, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${key}` },
+        });
+        if (!result.ok) {
+            throw new Error('ComfyUI returned an error.');
+        }
+        /** @type {any} */
+        const data = await result.json();
+        if (data.workers.ready <= 0) {
+            console.warn(`No workers reported as ready. ${result}`);
+        }
+
+        return response.sendStatus(200);
+    } catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
+});
+
+comfyRunPod.post('/generate', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.COMFY_RUNPOD);
+
+        if (!key) {
+            console.warn('RunPod key not found.');
+            return response.sendStatus(400);
+        }
+
+        let jobId;
+        let item;
+        const url = new URL(urlJoin(request.body.url, '/run'));
+
+        const controller = new AbortController();
+        request.socket.removeAllListeners('close');
+        request.socket.on('close', function () {
+            if (!response.writableEnded && !item) {
+                const interruptUrl = new URL(urlJoin(request.body.url, `/cancel/${jobId}`));
+                fetch(interruptUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${key}` } });
+            }
+            controller.abort();
+        });
+        const workflow = JSON.parse(request.body.prompt).prompt;
+        const wrappedWorkflow = workflow?.input?.workflow ? workflow : ({ input: { workflow: workflow } });
+        const runpodPrompt = JSON.stringify(wrappedWorkflow);
+
+        console.debug('ComfyUI RunPod request:', wrappedWorkflow);
+
+        const promptResult = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${key}` },
+            body: runpodPrompt,
+        });
+        if (!promptResult.ok) {
+            const text = await promptResult.text();
+            throw new Error('ComfyUI returned an error.', { cause: tryParse(text) });
+        }
+
+        /** @type {any} */
+        const data = await promptResult.json();
+        jobId = data.id;
+        const statusUrl = new URL(urlJoin(request.body.url, `/status/${jobId}`));
+        while (true) {
+            const result = await fetch(statusUrl, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${key}` },
+            });
+            if (!result.ok) {
+                throw new Error('ComfyUI returned an error.');
+            }
+            /** @type {any} */
+            const status = await result.json();
+            if (status.output) {
+                item = status.output.images[0];
+            }
+            if (item) {
+                break;
+            }
+            await delay(500);
+        }
+        const format = path.extname(item.filename).slice(1).toLowerCase() || 'png';
+        return response.send({ format: format, data: item.data });
+    } catch (error) {
+        console.error('ComfyUI error:', error);
+        response.status(500).send(error.message);
+        return response;
+    }
+});
+
 const together = express.Router();
 
 together.post('/models', async (request, response) => {
@@ -732,7 +834,7 @@ drawthings.post('/get-model', async (request, response) => {
         /** @type {any} */
         const data = await result.json();
 
-        return response.send(data['model']);
+        return response.send(data.model);
     } catch (error) {
         console.error(error);
         return response.sendStatus(500);
@@ -751,7 +853,7 @@ drawthings.post('/get-upscaler', async (request, response) => {
         /** @type {any} */
         const data = await result.json();
 
-        return response.send(data['upscaler']);
+        return response.send(data.upscaler);
     } catch (error) {
         console.error(error);
         return response.sendStatus(500);
@@ -1081,6 +1183,89 @@ electronhub.post('/sizes', async (request, response) => {
     }
 
     return response.send({ sizes });
+});
+
+const chutes = express.Router();
+
+chutes.post('/models', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.CHUTES);
+
+        if (!key) {
+            console.warn('Chutes key not found.');
+            return response.sendStatus(400);
+        }
+
+        const modelsResponse = await fetch('https://api.chutes.ai/chutes/?template=diffusion&include_public=true&limit=999', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!modelsResponse.ok) {
+            console.warn('Chutes returned an error.');
+            return response.sendStatus(500);
+        }
+
+        const data = await modelsResponse.json();
+
+        const chutesData = /** @type {{items: Array<{name: string}>}} */ (data);
+        const models = chutesData.items.map(x => ({ value: x.name, text: x.name })).sort((a, b) => a?.text?.localeCompare(b?.text));
+        return response.send(models);
+    }
+    catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
+});
+
+chutes.post('/generate', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.CHUTES);
+
+        if (!key) {
+            console.warn('Chutes key not found.');
+            return response.sendStatus(400);
+        }
+
+        const bodyParams = {
+            model: request.body.model,
+            prompt: request.body.prompt,
+            negative_prompt: request.body.negative_prompt,
+            guidance_scale: request.body.guidance_scale || 7.0,
+            width: request.body.width || 1024,
+            height: request.body.height || 1024,
+            num_inference_steps: request.body.steps || 10,
+        };
+
+        console.debug('Chutes request:', bodyParams);
+
+        const result = await fetch('https://image.chutes.ai/generate', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(bodyParams),
+        });
+
+        if (!result.ok) {
+            const text = await result.text();
+            console.warn('Chutes returned an error:', text);
+            return response.sendStatus(500);
+        }
+
+        const buffer = await result.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+
+        return response.send({ image: base64 });
+    }
+    catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
 });
 
 const nanogpt = express.Router();
@@ -1560,15 +1745,180 @@ aimlapi.post('/generate-image', async (req, res) => {
     }
 });
 
+const zai = express.Router();
+
+zai.post('/generate', async (request, response) => {
+    try {
+        const key = readSecret(request.user.directories, SECRET_KEYS.ZAI);
+
+        if (!key) {
+            console.warn('Z.AI key not found.');
+            return response.sendStatus(400);
+        }
+
+        console.debug('Z.AI image request:', request.body);
+
+        // Always use Common API for image generation (Coding API has stricter rate limits)
+        const generateResponse = await fetch('https://api.z.ai/api/paas/v4/images/generations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+                prompt: request.body.prompt,
+                model: request.body.model,
+                quality: request.body.quality,
+                size: request.body.size,
+            }),
+        });
+
+        if (!generateResponse.ok) {
+            const text = await generateResponse.text();
+            console.warn('Z.AI returned an error.', text);
+            return response.sendStatus(500);
+        }
+
+        /** @type {any} */
+        const data = await generateResponse.json();
+        console.debug('Z.AI image response:', data);
+
+        const url = data?.data?.[0]?.url;
+        if (!url || !isValidUrl(url) || !new URL(url).hostname.endsWith('.z.ai')) {
+            console.warn('Z.AI returned an invalid image URL.');
+            return response.sendStatus(500);
+        }
+
+        const imageResponse = await fetch(url);
+        if (!imageResponse.ok) {
+            console.warn('Z.AI image fetch returned an error. Status:', imageResponse.status, imageResponse.statusText);
+            return response.sendStatus(500);
+        }
+
+        const buffer = await imageResponse.arrayBuffer();
+        const image = Buffer.from(buffer).toString('base64');
+        const format = path.extname(url).substring(1).toLowerCase() || 'png';
+
+        return response.send({ image, format });
+    } catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
+});
+
+zai.post('/generate-video', async (request, response) => {
+    try {
+        const controller = new AbortController();
+        request.socket.removeAllListeners('close');
+        request.socket.on('close', function () {
+            controller.abort();
+        });
+
+        const key = readSecret(request.user.directories, SECRET_KEYS.ZAI);
+
+        if (!key) {
+            console.warn('Z.AI key not found.');
+            return response.sendStatus(400);
+        }
+
+        console.debug('Z.AI video request:', request.body);
+
+        const generateResponse = await fetch('https://api.z.ai/api/paas/v4/videos/generations', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+                prompt: request.body.prompt,
+                model: request.body.model,
+                quality: request.body.quality,
+                size: request.body.size,
+                aspect_ratio: request.body.aspect_ratio,
+            }),
+            signal: controller.signal,
+        });
+
+        if (!generateResponse.ok) {
+            const text = await generateResponse.text();
+            console.warn('Z.AI returned an error.', text);
+            return response.sendStatus(500);
+        }
+
+        /** @type {any} */
+        const data = await generateResponse.json();
+        console.debug('Z.AI video response:', data);
+
+        // Poll for video generation completion
+        for (let attempt = 0; attempt < 30; attempt++) {
+            if (controller.signal.aborted) {
+                console.info('Z.AI video generation aborted by client');
+                return response.status(500).send('Video generation aborted by client');
+            }
+
+            await delay(5000 + attempt * 1000);
+            console.debug(`Polling Z.AI video job ${data.id}, attempt ${attempt + 1}`);
+
+            const pollResponse = await fetch(`https://api.z.ai/api/paas/v4/async-result/${data.id}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${key}`,
+                },
+            });
+
+            if (!pollResponse.ok) {
+                const text = await pollResponse.text();
+                console.warn('Z.AI video job polling failed', pollResponse.statusText, text);
+                return response.status(500).send(text);
+            }
+
+            /** @type {any} */
+            const pollResult = await pollResponse.json();
+            console.debug(`Z.AI video job status: ${pollResult.task_status}`);
+
+            if (pollResult.task_status === 'FAIL') {
+                console.warn('Z.AI video generation failed', pollResult);
+                return response.status(500).send('Video generation failed');
+            }
+
+            if (pollResult.task_status === 'SUCCESS') {
+                console.debug('Z.AI video generation succeeded', pollResult);
+                const url = pollResult?.video_result?.[0]?.url;
+
+                if (!url || !isValidUrl(url)) {
+                    console.warn('Z.AI returned an invalid video URL.');
+                    return response.sendStatus(500);
+                }
+
+                const contentResponse = await fetch(url);
+                if (!contentResponse.ok) {
+                    const text = await contentResponse.text();
+                    console.warn('Z.AI video content fetch failed', contentResponse.statusText, text);
+                    return response.status(500).send(text);
+                }
+
+                const contentBuffer = await contentResponse.arrayBuffer();
+                return response.send({ format: 'mp4', video: Buffer.from(contentBuffer).toString('base64') });
+            }
+        }
+    } catch (error) {
+        console.error(error);
+        return response.sendStatus(500);
+    }
+});
+
 router.use('/comfy', comfy);
+router.use('/comfyrunpod', comfyRunPod);
 router.use('/together', together);
 router.use('/drawthings', drawthings);
 router.use('/pollinations', pollinations);
 router.use('/stability', stability);
 router.use('/huggingface', huggingface);
+router.use('/chutes', chutes);
 router.use('/electronhub', electronhub);
 router.use('/nanogpt', nanogpt);
 router.use('/bfl', bfl);
 router.use('/falai', falai);
 router.use('/xai', xai);
 router.use('/aimlapi', aimlapi);
+router.use('/zai', zai);

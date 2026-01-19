@@ -813,6 +813,47 @@ export function getWorldInfoSettings() {
     };
 }
 
+/**
+ * Updates the world info settings.
+ * @param {WorldInfoSettings} settings - Settings object
+ * @param {string[]} [activeWorldInfo] - Optional array of active world info names
+ */
+export function updateWorldInfoSettings(settings, activeWorldInfo) {
+    console.debug('[WI] Updating world info settings', settings, activeWorldInfo);
+
+    /** @type {Record<keyof WorldInfoSettings, (value: any) => void>} */
+    const fields = {
+        world_info_depth: (value) => world_info_depth = Number(value),
+        world_info_min_activations: (value) => world_info_min_activations = Number(value),
+        world_info_min_activations_depth_max: (value) => world_info_min_activations_depth_max = Number(value),
+        world_info_budget: (value) => world_info_budget = Number(value),
+        world_info_include_names: (value) => world_info_include_names = Boolean(value),
+        world_info_recursive: (value) => world_info_recursive = Boolean(value),
+        world_info_overflow_alert: (value) => world_info_overflow_alert = Boolean(value),
+        world_info_case_sensitive: (value) => world_info_case_sensitive = Boolean(value),
+        world_info_match_whole_words: (value) => world_info_match_whole_words = Boolean(value),
+        world_info_character_strategy: (value) => world_info_character_strategy = Number(value),
+        world_info_budget_cap: (value) => world_info_budget_cap = Number(value),
+        world_info_use_group_scoring: (value) => world_info_use_group_scoring = Boolean(value),
+        world_info_max_recursion_steps: (value) => world_info_max_recursion_steps = Number(value),
+        // Unused
+        world_info: (_value) => {},
+    };
+
+    for (const [key, setter] of Object.entries(fields)) {
+        if (Object.hasOwn(settings, key)) {
+            setter(settings[key]);
+        }
+    }
+
+    if (Array.isArray(activeWorldInfo)) {
+        delete settings.world_info;
+        selected_world_info = activeWorldInfo;
+    }
+
+    saveSettingsDebounced();
+}
+
 export const world_info_position = {
     before: 0,
     after: 1,
@@ -2490,7 +2531,12 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     });
 
     $('#world_duplicate').off('click').on('click', async () => {
-        const tempName = getFreeWorldName();
+        // Find current name for the world selected
+        const selectedIndex = String($('#world_editor_select').find(':selected').val());
+        const worldName = world_names[selectedIndex] || null;
+
+        // Use the current name as default input, then ask user for the name
+        const tempName = getFreeWorldName(worldName);
         const finalName = await Popup.show.input('Create a new World Info?', 'Enter a name for the new file:', tempName);
 
         if (finalName) {
@@ -3230,7 +3276,7 @@ export async function getWorldEntry(name, data, entry) {
     const commentInput = headerTemplate.find('textarea[name="comment"]');
 
     //Update the commentInput's placeholder.
-    const keys = entry['key'].join(', ');
+    const keys = entry.key.join(', ');
     setCommentPlaceholder(keys, commentInput);
 
     commentInput.data('uid', entry.uid);
@@ -4139,10 +4185,25 @@ export function getFreeWorldEntryUid(data) {
     return null;
 }
 
-export function getFreeWorldName() {
+
+/**
+ * Generates a free world name based on the given input name.
+ * If the input name is null, a default name is used.
+ * If the input name already exists, a numbered suffix is added.
+ *
+ * @param {string|null} worldName - The name to base the new world name on. If null, a default name is used.
+ * @param {Object} [options={}] - Optional parameters.
+ * @param {boolean} [options.stripIndex=true] - Whether to strip any numbered suffix from the input name before generating the new name.
+ * @return {string|undefined} The generated free world name, or undefined if no free name could be found after trying 100,000 times.
+ */
+export function getFreeWorldName(worldName = null, { stripIndex = true } = {}) {
+    worldName ??= t`New World`;
+    if (stripIndex) {
+        worldName = worldName.replace(/\s*\(\d+\)$/, '');
+    }
     const MAX_FREE_NAME = 100_000;
     for (let index = 1; index < MAX_FREE_NAME; index++) {
-        const newName = `New World (${index})`;
+        const newName = `${worldName} (${index})`;
         if (world_names.includes(newName)) {
             continue;
         }
@@ -4845,6 +4906,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         }
 
         // Final check if we should really continue scan, and extend the current WI recurse buffer
+        const curScanState = scanState;
         scanState = nextScanState;
         if (scanState) {
             const text = successfulNewEntriesForRecursion
@@ -4856,6 +4918,45 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         } else {
             logNextState('[WI] Scan done. No new entries to prompt. Stopping.');
         }
+
+        // Fire an event after each scan loop, so extensions can hook into the current scanning state
+        const args = {
+            state: {
+                current: curScanState,
+                next: scanState,
+                loopCount: count,
+            },
+            new: {
+                all: newEntries,
+                successful: successfulNewEntries,
+            },
+            activated: {
+                entries: allActivatedEntries,
+                text: allActivatedText,
+            },
+            sortedEntries,
+            recursionDelay: {
+                availableLevels: availableRecursionDelayLevels,
+                currentLevel: currentRecursionDelayLevel,
+            },
+            budget: {
+                current: budget,
+                overflowed: token_budget_overflowed,
+            },
+            timedEffects,
+        };
+        await eventSource.emit(event_types.WORLDINFO_SCAN_DONE, args);
+
+        // Some fields are allowed to be changed by listeners, those will be handled here manually. They can be updated via changed the args from the listeners.
+        // Any array provided directly can be modified by updating it's elements, adding or removing elements. This has to be done consistently.
+        if (args.state.next !== scanState) {
+            logNextState('[WI] Scan state changed from', scanState, 'to', args.state.next);
+            scanState = args.state.next;
+        }
+        allActivatedText = args.activated.text;
+        currentRecursionDelayLevel = args.recursionDelay.currentLevel;
+        budget = args.budget.current;
+        token_budget_overflowed = args.budget.overflowed;
     }
 
     console.debug('[WI] --- BUILDING PROMPT ---');

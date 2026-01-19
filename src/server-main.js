@@ -1,4 +1,5 @@
 // native node modules
+import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
 import net from 'node:net';
@@ -68,6 +69,7 @@ import { init as settingsInit } from './endpoints/settings.js';
 import { redirectDeprecatedEndpoints, ServerStartup, setupPrivateEndpoints } from './server-startup.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
+import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
 
 // Work around a node v20.0.0, v20.1.0, and v20.2.0 bug. The issue was fixed in v20.3.0.
 // https://github.com/nodejs/node/issues/47822#issuecomment-1564708870
@@ -265,6 +267,7 @@ async function preSetupTasks() {
     console.log();
 
     const directories = await getUserDirectoriesList();
+    await migrateGroupChatsMetadataFormat(directories);
     await checkForNewContent(directories);
     await ensureThumbnailCache(directories);
     await diskCache.verify(directories);
@@ -345,6 +348,28 @@ async function postSetupTasks(result) {
         } catch (error) {
             console.error('Failed to launch the browser. Open the URL manually.', error);
         }
+    }
+
+    if (cliArgs.heartbeatInterval > 0) {
+        // Convert seconds to milliseconds for the timer
+        const intervalMs = cliArgs.heartbeatInterval * 1000;
+        const heartbeatPath = path.join(globalThis.DATA_ROOT, 'heartbeat.json');
+
+        console.log(`Heartbeat enabled. Updating ${color.green(heartbeatPath)} every ${cliArgs.heartbeatInterval} seconds`);
+
+        const writeHeartbeat = () => {
+            try {
+                fs.writeFileSync(heartbeatPath, JSON.stringify({ timestamp: Date.now() }));
+            } catch (err) {
+                console.error(`Failed to write heartbeat file at ${color.green(heartbeatPath)}:`, err.message);
+            }
+        };
+
+        // Write immediately
+        writeHeartbeat();
+
+        // Loop using the converted milliseconds
+        setInterval(writeHeartbeat, intervalMs).unref();
     }
 
     setWindowTitle('SillyTavern WebServer');

@@ -57,4 +57,3 @@ public/scripts/extensions/third-party
 yarn.lock
 *.code-workspace
 test-results/
-node_modules

@@ -311,8 +311,8 @@ export class AutoComplete {
         this.name = this.parserResult.name.toLowerCase() ?? '';
 
         const isCursorInNamePart = this.textarea.selectionStart >= this.parserResult.start && this.textarea.selectionStart <= this.parserResult.start + this.parserResult.name.length + (this.startQuote ? 1 : 0);
-        if (isForced || isInput) {
-            // if forced (ctrl+space) or user input...
+        if (isForced || isInput || isSelect) {
+            // if forced (ctrl+space) or user input or just selected an option...
             if (isCursorInNamePart) {
                 // ...and cursor is somewhere in the name part (including right behind the final char)
                 // -> show autocomplete for the (partial if cursor in the middle) name
@@ -393,8 +393,20 @@ export class AutoComplete {
                 this.updateName(option);
                 return option;
             })
-            // sort by fuzzy score or alphabetical
-            .toSorted(this.matchType == 'fuzzy' ? this.fuzzyScoreCompare : (a, b) => a.name.localeCompare(b.name));
+            // sort by priority first, then by fuzzy score or alphabetical
+            .toSorted((a, b) => {
+                // First compare by sortPriority (lower = higher priority)
+                const priorityA = a.sortPriority ?? 100;
+                const priorityB = b.sortPriority ?? 100;
+                if (priorityA !== priorityB) {
+                    return priorityA - priorityB;
+                }
+                // Then by fuzzy score or alphabetical
+                if (this.matchType == 'fuzzy') {
+                    return this.fuzzyScoreCompare(a, b);
+                }
+                return a.name.localeCompare(b.name);
+            });
 
 
 
@@ -680,8 +692,10 @@ export class AutoComplete {
      */
     async select() {
         if (this.isReplaceable && this.selectedItem.value !== null) {
-            this.textarea.value = `${this.text.slice(0, this.effectiveParserResult.start)}${this.selectedItem.replacer}${this.text.slice(this.effectiveParserResult.start + this.effectiveParserResult.name.length + (this.startQuote ? 1 : 0) + (this.endQuote ? 1 : 0))}`;
-            this.textarea.selectionStart = this.effectiveParserResult.start + this.selectedItem.replacer.length;
+            // Apply per-option replacement offset (e.g., for closing tags that need to replace leading whitespace)
+            const effectiveStart = this.effectiveParserResult.start + (this.selectedItem.replacementStartOffset ?? 0);
+            this.textarea.value = `${this.text.slice(0, effectiveStart)}${this.selectedItem.replacer}${this.text.slice(this.effectiveParserResult.start + this.effectiveParserResult.name.length + (this.startQuote ? 1 : 0) + (this.endQuote ? 1 : 0))}`;
+            this.textarea.selectionStart = effectiveStart + this.selectedItem.replacer.length;
             this.textarea.selectionEnd = this.textarea.selectionStart;
             this.show(false, false, true);
         } else {
