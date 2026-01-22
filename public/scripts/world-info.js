@@ -23,6 +23,114 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, user_avatar } from './personas.js';
+import { isAdmin, getCurrentUserHandle } from './user.js';
+
+
+const botmakersMap = {
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
+    "hailey": [
+        "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
+        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
+        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", 
+        "bb-hailey-Jett", "bb-hailey-Elias","bb-hailey-Nico", "bb-hailey-Leo"
+    ],
+    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle"],
+    "retsukoh": [
+        "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso",
+        "bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto",
+        "bb-retsukoh-sephiroth"
+    ],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
+    "dreamweaver":["bb-dreamweaver-Venryk"],
+    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
+    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
+    "ravenh":["bb-ravenh-Ryker"],
+    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
+    "sapphira":["bb-sapphira-astinthorne"],
+    "alyrianna":["bb-alyrianna-Alec&Ash"]
+};
+
+
+/**
+*Checks if the current user is an admin*
+*@returns {boolean} Whether the current user is an admin*
+*/
+function isCurrentUserAdmin() {
+    try {
+        // Use the existing isAdmin function if available
+        if (typeof isAdmin === 'function') {
+            return isAdmin();
+        }
+
+        // Fallback to checking specific admin usernames
+        const userHandle = getCurrentUserHandle();
+        return ['admin', 'default-user'].includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking admin status:', error);
+        return false;
+    }
+}
+
+/**
+ *Checks if the current user is a botmaker*
+* @returns {boolean} Whether the current user is a botmaker*
+ */
+function isCurrentUserBotmaker() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return Object.keys(botmakersMap).includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking botmaker status:', error);
+        return false;
+    }
+}
+
+/**
+* Gets the list of loreBooks the current user has access to if they're a botmaker*
+ *@returns {string[]} Array of loreBook names the user has access to*
+*/
+function getBotmakerAllowedLoreBooks() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return botmakersMap[userHandle] || [];
+    } catch (error) {
+        console.error('[WI] Error getting allowed loreBooks:', error);
+        return [];
+    }
+}
+
+/**
+*Checks if a user has access to view a specific loreBook*
+*@param {string} lorebookName - Name of the loreBook to check access for*
+*@returns {boolean} Whether the user has access to the loreBook*
+*/
+function hasLoreBookAccess(lorebookName) {
+    // Admins have access to everything
+    if (isCurrentUserAdmin()) {
+        return true;
+    }
+
+    // Assume personal loreBooks are prefixed with "bb-username-"
+    const userHandle = getCurrentUserHandle();
+    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
+        return true; // User's personal loreBook
+    }
+
+    // Check if it's a global loreBook (no special prefix)
+    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
+        return true; // Global loreBook accessible to all
+    }
+
+    // For botmakers, check if they have access to this specific loreBook
+    if (isCurrentUserBotmaker()) {
+        const allowedBooks = getBotmakerAllowedLoreBooks();
+        return allowedBooks.includes(lorebookName);
+    }
+
+    // By default, deny access
+    return false;
+}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -70,7 +178,7 @@ export let world_info_depth = 2;
 export let world_info_min_activations = 0; // if > 0, will continue seeking chat until minimum world infos are activated
 export let world_info_min_activations_depth_max = 0; // used when (world_info_min_activations > 0)
 
-export let world_info_budget = 25;
+export let world_info_budget = 40;
 export let world_info_include_names = true;
 export let world_info_recursive = false;
 export let world_info_overflow_alert = false;
@@ -915,6 +1023,74 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanD
         outletEntries: activatedWorldInfo.outletEntries ?? {},
     };
 }
+/**
+*Filters world names based on user permissions*
+*@param {object} data - The data containing world names*
+*@returns {string[]} Filtered list of world names*
+*/
+function filterWorldNames(data) {
+    let world_names = data.world_names?.length ? data.world_names : [];
+    console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
+
+    if (Array.isArray(world_names)) {
+        try {
+            const currentUserHandle = getCurrentUserHandle();
+            const isUserAdmin = isCurrentUserAdmin();
+            const isUserBotmaker = isCurrentUserBotmaker();
+            console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
+
+            // Exempt admins from filtering
+            if (isUserAdmin) {
+                console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
+                // No filtering needed - return all world names
+                return world_names;
+            } else {
+                console.log('[WorldInfo] Applying filters for user', currentUserHandle);
+
+                // First layer: Filter out #hidden# files for non-admins
+                let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
+                console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
+
+                // Second layer: Apply user handle pattern matching
+                world_names = filteredNames.filter(name => {
+                    // Personal loreBooks: match username prefix
+                    if (name.startsWith(`bb-${currentUserHandle}-`)) {
+                        return true;
+                    }
+
+                    // Global loreBooks: available to everyone
+                    if (!name.startsWith('bb-')) {
+                        return true;
+                    }
+
+                    // Botmaker loreBooks: check permissions
+                    if (isUserBotmaker) {
+                        const allowedBooks = getBotmakerAllowedLoreBooks();
+                        return allowedBooks.includes(name);
+                    }
+
+                    // User-specific loreBooks: deny access
+                    if (name.match(/^\$\$-(\w+)/)) {
+                        console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
+                        return false;
+                    }
+
+                    return false;
+                });
+
+                console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
+                return world_names;
+            }
+        } catch (error) {
+            console.error('[WorldInfo] Error during world filtering:', error);
+            // In case of error, keep original world_names
+            return world_names;
+        }
+    }
+
+    return world_names;
+}
+
 
 export function setWorldInfoSettings(settings, data) {
     if (settings.world_info_depth !== undefined)
@@ -993,8 +1169,74 @@ export function setWorldInfoSettings(settings, data) {
 
     $('#world_info_max_recursion_steps').val(world_info_max_recursion_steps);
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
+    
 
     world_names = data.world_names?.length ? data.world_names : [];
+
+
+        if (typeof getCurrentUserHandle !== 'function') {
+            function getCurrentUserHandle() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Try to get from localStorage or sessionStorage
+                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+                        if (userID) return userID;
+                        
+                        // Check if it's available from other ST modules
+                        if (window.userSettings && window.userSettings.name) {
+                            return window.userSettings.name;
+                        }
+                    }
+                    
+                    // If running in Node.js side of SillyTavern
+                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
+                        return process.env.CURRENT_USER;
+                    }
+                    
+                    return 'anonymous';
+                } catch (error) {
+                    console.error('[WorldInfo] Error getting user handle:', error);
+                    return 'anonymous';
+                }
+            }
+            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
+        }
+
+// Function to check if user is admin - only define if it doesn't exist
+        if (typeof isAdmin !== 'function') {
+            function isAdmin() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Check if it's available from other ST modules
+                        if (typeof window.isUserAdmin === 'function') {
+                            return window.isUserAdmin();
+                        }
+                        
+                        // Fallback to checking specific admin users
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    // If running in Node.js side
+                    if (typeof process !== 'undefined') {
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.error('[WorldInfo] Error checking admin status:', error);
+                    return false;
+                }
+            }
+            console.log('[WorldInfo] Defined fallback isAdmin function');
+        }
+        // Call the function with the data and assign the result back
+        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -1416,18 +1658,18 @@ function registerWorldInfoSlashCommands() {
                 setWIOriginalDataValue(data, uid, 'character_filter', entry.characterFilter);
                 break;
             default:
-                if (Array.isArray(entry[field])) {
+        if (Array.isArray(entry[field])) {
                     entry[field] = parseStringArray(value).filter(arrayFilter);
-                } else if (typeof entry[field] === 'boolean') {
-                    entry[field] = isTrueBoolean(value);
-                } else if (typeof entry[field] === 'number') {
-                    entry[field] = Number(value);
-                } else {
-                    entry[field] = value;
-                }
+        } else if (typeof entry[field] === 'boolean') {
+            entry[field] = isTrueBoolean(value);
+        } else if (typeof entry[field] === 'number') {
+            entry[field] = Number(value);
+        } else {
+            entry[field] = value;
+        }
 
-                if (originalWIDataKeyMap[field]) {
-                    setWIOriginalDataValue(data, uid, originalWIDataKeyMap[field], entry[field]);
+        if (originalWIDataKeyMap[field]) {
+            setWIOriginalDataValue(data, uid, originalWIDataKeyMap[field], entry[field]);
                 }
         }
 
@@ -2052,7 +2294,7 @@ export async function updateWorldInfoList() {
     if (result.ok) {
         const data = await result.json();
         const editorSelected = String($('#world_editor_select').find(':selected').text());
-        world_names = data.world_names?.length ? data.world_names : [];
+        world_names = filterWorldNames(data);
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -2296,8 +2538,29 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     updateEditor = async (navigation, flashOnNav = true) => await displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
+
+    const hasEditPermission = isCurrentUserAdmin() ||
+                              !name.startsWith('bb-') ||
+                              name.startsWith(`bb-${getCurrentUserHandle()}-`) ||
+                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
+
+    if (!hasEditPermission) {
+        // Make all inputs and controls read-only
+        worldEntriesList.find('input, textarea, select').prop('disabled', true);
+        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
+        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
+
+        // Add a notice
+        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
+    }
+
+
+    // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
+    // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
     clearEntryList(worldEntriesList);
-    worldEntriesList.show();
+    worldEntriesList.find('*').off();
+    worldEntriesList.empty().show();
+    
 
     if (!data || !('entries' in data)) {
         $('#world_popup_new').off('click').on('click', nullWorldInfo);
@@ -2397,7 +2660,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
             try {
                 clearEntryList(worldEntriesList);
 
-                const keywordHeaders = await renderTemplateAsync('worldInfoKeywordHeaders');
+            const keywordHeaders = await renderTemplateAsync('worldInfoKeywordHeaders');
                 const blocks = [];
 
                 for (const entry of page) {
@@ -2411,15 +2674,15 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     }
                 }
 
-                const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
-                if (!isCustomOrder) {
-                    blocks.forEach(block => {
-                        block.find('.drag-handle').remove();
-                    });
-                }
+            const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
+            if (!isCustomOrder) {
+                blocks.forEach(block => {
+                    block.find('.drag-handle').remove();
+                });
+            }
 
-                worldEntriesList.append(keywordHeaders);
-                worldEntriesList.append(blocks);
+            worldEntriesList.append(keywordHeaders);
+            worldEntriesList.append(blocks);
             } catch (error) {
                 console.error('Error while rendering WI entries:', error);
             }
@@ -2841,40 +3104,40 @@ export function parseRegexFromString(input) {
  * @param {object} params.data - The data object containing entries.
  */
 function enableKeysInputHelper({ template, entry, entryPropName, originalDataValueName, name, data }) {
-    const isFancyInput = !isMobile() && !power_user.wi_key_input_plaintext;
-    const input = isFancyInput ? template.find(`select[name="${entryPropName}"]`) : template.find(`textarea[name="${entryPropName}"]`);
-    input.data('uid', entry.uid);
-    input.on('click', function (event) {
-        event.stopPropagation();
-    });
+        const isFancyInput = !isMobile() && !power_user.wi_key_input_plaintext;
+        const input = isFancyInput ? template.find(`select[name="${entryPropName}"]`) : template.find(`textarea[name="${entryPropName}"]`);
+        input.data('uid', entry.uid);
+        input.on('click', function (event) {
+            event.stopPropagation();
+        });
 
     function templateStyling(item, { searchStyle = false } = {}) {
-        const content = $('<span>').addClass('item').text(item.text).attr('title', `${item.text}\n\nClick to edit`);
-        const isRegex = isValidRegex(item.text);
-        if (isRegex) {
-            content.html(highlightRegex(item.text));
-            content.addClass('regex_item').prepend($('<span>').addClass('regex_icon').text('•*').attr('title', 'Regex'));
-        }
-        if (searchStyle && item.count) {
+            const content = $('<span>').addClass('item').text(item.text).attr('title', `${item.text}\n\nClick to edit`);
+            const isRegex = isValidRegex(item.text);
+            if (isRegex) {
+                content.html(highlightRegex(item.text));
+                content.addClass('regex_item').prepend($('<span>').addClass('regex_icon').text('•*').attr('title', 'Regex'));
+            }
+            if (searchStyle && item.count) {
             const wrapper = $('<span>').addClass('result_block').append(content);
-            wrapper.append($('<span>').addClass('item_count').text(item.count).attr('title', `Used as a key ${item.count} ${item.count != 1 ? 'times' : 'time'} in this lorebook`));
-            return wrapper;
+                wrapper.append($('<span>').addClass('item_count').text(item.count).attr('title', `Used as a key ${item.count} ${item.count != 1 ? 'times' : 'time'} in this lorebook`));
+                return wrapper;
+            }
+            return content;
         }
-        return content;
-    }
 
-    if (isFancyInput) {
-        select2ModifyOptions(input, entry[entryPropName], { select: true, changeEventArgs: { skipReset: true, noSave: true } });
-        input.select2({
-            ajax: dynamicSelect2DataViaAjax(() => worldEntryKeyOptionsCache),
-            tags: true,
-            tokenSeparators: [','],
+        if (isFancyInput) {
+            select2ModifyOptions(input, entry[entryPropName], { select: true, changeEventArgs: { skipReset: true, noSave: true } });
+            input.select2({
+                ajax: dynamicSelect2DataViaAjax(() => worldEntryKeyOptionsCache),
+                tags: true,
+                tokenSeparators: [','],
             // @ts-ignore
-            tokenizer: customTokenizer,
-            placeholder: input.attr('placeholder'),
-            templateResult: item => templateStyling(item, { searchStyle: true }),
-            templateSelection: item => templateStyling(item),
-        });
+                tokenizer: customTokenizer,
+                placeholder: input.attr('placeholder'),
+                templateResult: item => templateStyling(item, { searchStyle: true }),
+                templateSelection: item => templateStyling(item),
+            });
 
         // TypeScript-safe event handler
         /**
@@ -2882,67 +3145,67 @@ function enableKeysInputHelper({ template, entry, entryPropName, originalDataVal
          * @param {{ skipReset?: boolean, noSave?: boolean }} [arg]
          */
         input.on('change', async function (_event, arg) {
-            const uid = $(this).data('uid');
-            const keys = ($(this).select2('data')).map(x => x.text);
+                const uid = $(this).data('uid');
+                const keys = ($(this).select2('data')).map(x => x.text);
             const skipReset = arg?.skipReset ?? false;
             const noSave = arg?.noSave ?? false;
             if (!skipReset) await resetScrollHeight(this);
-            if (!noSave) {
-                data.entries[uid][entryPropName] = keys;
-                setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
-                await saveWorldInfo(name, data);
-            }
-            $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
+                if (!noSave) {
+                    data.entries[uid][entryPropName] = keys;
+                    setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
+                    await saveWorldInfo(name, data);
+                }
+                $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
             // Update the commentInput's placeholder for primary keys
             if (entryPropName === 'key') {
                 const commentInput = $(_event.currentTarget).closest('.world_entry_form').find('textarea[name="comment"]');
                 setCommentPlaceholder(data.entries[uid][entryPropName].join(', '), commentInput);
             }
-        });
+            });
 
-        input.toggleClass('empty', !entry[entryPropName].length);
+            input.toggleClass('empty', !entry[entryPropName].length);
         input.on('select2:select', event => updateWorldEntryKeyOptionsCache([event.params.data]));
         input.on('select2:unselect', event => updateWorldEntryKeyOptionsCache([event.params.data], { remove: true }));
 
-        select2ChoiceClickSubscribe(input, target => {
-            const key = $(target.closest('.regex-highlight, .item')).text();
-            const selected = input.val();
-            if (!Array.isArray(selected)) return;
-            var index = selected.indexOf(getSelect2OptionId(key));
-            if (index > -1) selected.splice(index, 1);
-            input.val(selected).trigger('change');
-            updateWorldEntryKeyOptionsCache([key], { remove: true });
+            select2ChoiceClickSubscribe(input, target => {
+                const key = $(target.closest('.regex-highlight, .item')).text();
+                const selected = input.val();
+                if (!Array.isArray(selected)) return;
+                var index = selected.indexOf(getSelect2OptionId(key));
+                if (index > -1) selected.splice(index, 1);
+                input.val(selected).trigger('change');
+                updateWorldEntryKeyOptionsCache([key], { remove: true });
             input.next('span.select2-container').find('textarea').val(key).trigger('input');
-        }, { openDrawer: true });
+            }, { openDrawer: true });
     } else {
-        template.find(`select[name="${entryPropName}"]`).hide();
-        input.show();
+            template.find(`select[name="${entryPropName}"]`).hide();
+            input.show();
         /**
         * @param {Event} _event
         * @param {{ skipReset?: boolean, noSave?: boolean }} [arg]
         */
         input.on('change', async function (_event, arg) {
-            const uid = $(this).data('uid');
-            const value = String($(this).val());
+                const uid = $(this).data('uid');
+                const value = String($(this).val());
             const skipReset = arg?.skipReset ?? false;
             const noSave = arg?.noSave ?? false;
             if (!skipReset) await resetScrollHeight(this);
-            if (!noSave) {
-                data.entries[uid][entryPropName] = splitKeywordsAndRegexes(value);
-                setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
-                await saveWorldInfo(name, data);
-                $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
-            }
+                if (!noSave) {
+                    data.entries[uid][entryPropName] = splitKeywordsAndRegexes(value);
+                    setWIOriginalDataValue(data, uid, originalDataValueName, data.entries[uid][entryPropName]);
+                    await saveWorldInfo(name, data);
+                    $(this).toggleClass('empty', !data.entries[uid][entryPropName].length);
+                }
             // Update the commentInput's placeholder for primary keys
             if (entryPropName === 'key') {
                 const commentInput = $(_event.currentTarget).closest('.world_entry_form').find('textarea[name="comment"]');
                 setCommentPlaceholder(value, commentInput);
             }
-        });
-        input.val(entry[entryPropName].join(', ')).trigger('input', { skipReset: true });
+            });
+            input.val(entry[entryPropName].join(', ')).trigger('input', { skipReset: true });
+        }
+        return { isFancy: isFancyInput, control: input };
     }
-    return { isFancy: isFancyInput, control: input };
-}
 
 /**
  * Helper to handle match checkboxes for WI entries.
@@ -2985,7 +3248,7 @@ function updatePosOrdDisplayHelper({ template, data, uid }) {
         case 4: posText = `@D${entry.depth}`; break;
     }
     template.find('.world_entry_form_position_value').text(`(${posText} ${entry.order})`);
-}
+                }
 
 /**
  * Helper to initialize character filter select2.
@@ -3403,7 +3666,7 @@ export async function getWorldEntry(name, data, entry) {
             return;
         }
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move/Copy '${sourceName}' to:`;
+        wrapper.textContent = t`Copy '${sourceName}' to:`;
         const container = document.createElement('div');
         container.appendChild(wrapper);
         container.appendChild(select);
@@ -3414,7 +3677,6 @@ export async function getWorldEntry(name, data, entry) {
         const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
             cancelButton: t`Cancel`,
             customButtons: [
-                { text: t`Move`, result: POPUP_RESULT.CUSTOM1 },
                 { text: t`Copy`, result: POPUP_RESULT.CUSTOM2 },
             ],
         });
@@ -3427,7 +3689,7 @@ export async function getWorldEntry(name, data, entry) {
             toastr.warning(t`Please select a target lorebook.`);
             return;
         }
-        const deleteOriginal = popupConfirm === POPUP_RESULT.CUSTOM1;
+        const deleteOriginal = false; // Always copy, never move
         await moveWorldInfoEntry(sourceWorld, selectedValue, sourceUid, { deleteOriginal });
     });
 
@@ -3442,8 +3704,8 @@ export async function getWorldEntry(name, data, entry) {
             drawerDestroyTimeout = setTimeout(() => {
                 // Drawer was reopened, so we don't destroy it
                 if (editOutlet.is(':visible')) {
-                    return;
-                }
+            return;
+        }
                 drawerInitialized = false;
                 clearEntryList(editOutlet);
                 drawerDestroyTimeout = null;
@@ -3605,37 +3867,37 @@ export async function getWorldEntry(name, data, entry) {
 
         // Scan depth
         const scanDepthInput = editTemplate.find('input[name="scanDepth"]');
-        scanDepthInput.data('uid', entry.uid);
+    scanDepthInput.data('uid', entry.uid);
         scanDepthInput.on('input', async function (_, { noSave = false } = {}) {
-            const uid = $(this).data('uid');
-            const isEmpty = $(this).val() === '';
-            const value = Number($(this).val());
-            if (value < 0) {
-                $(this).val(0).trigger('input');
-                toastr.warning('Scan depth cannot be negative');
-                return;
-            }
-            if (value > MAX_SCAN_DEPTH) {
-                $(this).val(MAX_SCAN_DEPTH).trigger('input');
-                toastr.warning(`Scan depth cannot exceed ${MAX_SCAN_DEPTH}`);
-                return;
-            }
-            data.entries[uid].scanDepth = !isEmpty && !isNaN(value) && value >= 0 && value <= MAX_SCAN_DEPTH ? Math.floor(value) : null;
-            setWIOriginalDataValue(data, uid, 'extensions.scan_depth', data.entries[uid].scanDepth);
+        const uid = $(this).data('uid');
+        const isEmpty = $(this).val() === '';
+        const value = Number($(this).val());
+        if (value < 0) {
+            $(this).val(0).trigger('input');
+            toastr.warning('Scan depth cannot be negative');
+            return;
+        }
+        if (value > MAX_SCAN_DEPTH) {
+            $(this).val(MAX_SCAN_DEPTH).trigger('input');
+            toastr.warning(`Scan depth cannot exceed ${MAX_SCAN_DEPTH}`);
+            return;
+        }
+        data.entries[uid].scanDepth = !isEmpty && !isNaN(value) && value >= 0 && value <= MAX_SCAN_DEPTH ? Math.floor(value) : null;
+        setWIOriginalDataValue(data, uid, 'extensions.scan_depth', data.entries[uid].scanDepth);
             !noSave && await saveWorldInfo(name, data);
-        });
+    });
         scanDepthInput.val(entry.scanDepth ?? null).trigger('input', { noSave: true });
 
         // Group
         const groupInput = editTemplate.find('input[name="group"]');
         groupInput.data('uid', entry.uid);
         groupInput.on('input', async function (_, { noSave = false } = {}) {
-            const uid = $(this).data('uid');
+        const uid = $(this).data('uid');
             const value = String($(this).val()).trim();
             data.entries[uid].group = value;
             setWIOriginalDataValue(data, uid, 'extensions.group', data.entries[uid].group);
             !noSave && await saveWorldInfo(name, data);
-        });
+    });
         groupInput.val(entry.group ?? '').trigger('input', { noSave: true });
         setTimeout(() => createEntryInputAutocomplete(groupInput, getInclusionGroupCallback(data), { allowMultiple: true }), 1);
 
@@ -3643,12 +3905,12 @@ export async function getWorldEntry(name, data, entry) {
         const groupOverrideInput = editTemplate.find('input[name="groupOverride"]');
         groupOverrideInput.data('uid', entry.uid);
         groupOverrideInput.on('input', async function (_, { noSave = false } = {}) {
-            const uid = $(this).data('uid');
+        const uid = $(this).data('uid');
             const value = $(this).prop('checked');
             data.entries[uid].groupOverride = value;
             setWIOriginalDataValue(data, uid, 'extensions.group_override', data.entries[uid].groupOverride);
             !noSave && await saveWorldInfo(name, data);
-        });
+    });
         groupOverrideInput.prop('checked', entry.groupOverride).trigger('input', { noSave: true });
 
         // Group weight
@@ -3718,16 +3980,16 @@ export async function getWorldEntry(name, data, entry) {
 
         // Automation ID
         const automationIdInput = editTemplate.find('input[name="automationId"]');
-        automationIdInput.data('uid', entry.uid);
+    automationIdInput.data('uid', entry.uid);
         automationIdInput.on('input', async function (_, { noSave = false } = {}) {
-            const uid = $(this).data('uid');
-            const value = $(this).val();
-            data.entries[uid].automationId = value;
-            setWIOriginalDataValue(data, uid, 'extensions.automation_id', data.entries[uid].automationId);
+        const uid = $(this).data('uid');
+        const value = $(this).val();
+        data.entries[uid].automationId = value;
+        setWIOriginalDataValue(data, uid, 'extensions.automation_id', data.entries[uid].automationId);
             !noSave && await saveWorldInfo(name, data);
-        });
+    });
         automationIdInput.val(entry.automationId ?? '').trigger('input', { noSave: true });
-        setTimeout(() => createEntryInputAutocomplete(automationIdInput, getAutomationIdCallback(data)), 1);
+    setTimeout(() => createEntryInputAutocomplete(automationIdInput, getAutomationIdCallback(data)), 1);
 
         // Generation Type Triggers
         const generationTypeTriggers = editTemplate.find('select[name="triggers"]');
@@ -3805,7 +4067,7 @@ function buildAutocompleteCallback({ data, collectValues, includeExtras = () => 
         for (const v of includeExtras()) {
             const s = String(v).trim();
             if (s) values.add(s);
-        }
+            }
 
         // Sort stable & locale-aware
         const haystack = Array.from(values).sort((a, b) => a.localeCompare(b));
@@ -3863,7 +4125,7 @@ function getAutomationIdCallback(data) {
                 ? globalThis.quickReplyApi.listAutomationIds()
                 : [],
     });
-}
+            }
 
 function getOutletNameCallback(data) {
     return buildAutocompleteCallback({
@@ -4064,6 +4326,17 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
+    // Check if user has permission to modify this lorebook
+    if (!isCurrentUserAdmin() && name.startsWith('bb-') && !name.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
+            toastr.error('You do not have permission to modify this lorebook');
+            return;
+        }
+    }
+
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -4077,6 +4350,16 @@ export async function saveWorldInfo(name, data, immediately = false) {
 async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
+
+    // Check if user has permission to rename this lorebook
+    if (!isCurrentUserAdmin() && oldName.startsWith('bb-') && !oldName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
+        if (!isAllowedBotmaker) {
+            toastr.error('You do not have permission to rename this lorebook');
+            return;
+        }
+    }
 
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
@@ -4123,6 +4406,16 @@ async function renameWorldInfo(name, data) {
 export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
+    }
+        // Check if user has permission to delete this lorebook
+    if (!isCurrentUserAdmin() && worldInfoName.startsWith('bb-') && !worldInfoName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
+            toastr.error('You do not have permission to delete this lorebook');
+            return false;
+        }
     }
 
     const response = await fetch('/api/worldinfo/delete', {
@@ -4227,6 +4520,15 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
 
     if (!worldName) {
         return false;
+    }
+
+    // Check if the user is trying to create a lorebook with a protected prefix
+    const userHandle = getCurrentUserHandle();
+    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`)) {
+        if (!isCurrentUserAdmin()) {
+            toastr.error('You can only create loreBooks with your own username prefix');
+            return false;
+        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -4833,20 +5135,20 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
 
             if (!entry.ignoreBudget && (textToScanTokens + (await getTokenCountAsync(newContent))) >= budget) {
                 if (!token_budget_overflowed) {
-                    console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
-                    if (world_info_overflow_alert) {
-                        console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
-                        toastr.warning(`World info budget reached after ${allActivatedEntries.size} entries.`, 'World Info');
-                    } else {
-                        console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
-                    }
-                    token_budget_overflowed = true;
+                console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
+                if (world_info_overflow_alert) {
+                    console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
+                    toastr.warning(`World info budget reached after ${allActivatedEntries.size} entries.`, 'World Info');
+                } else {
+                    console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
+                }
+                token_budget_overflowed = true;
                 }
                 continue;
             }
 
             allActivatedEntries.set(`${entry.world}.${entry.uid}`, entry);
-            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`, entry);
+            console.debug(`[WI] Entry ${entry.uid} activation successful, adding to prompt`);
         }
 
         const successfulNewEntries = newEntries.filter(x => !failedProbabilityChecks.has(x));
@@ -4858,7 +5160,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         } else if (!successfulNewEntries.length) {
             console.debug('[WI] Probability checks failed for all activated entries. No new entries activated.');
         } else {
-            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`, successfulNewEntries);
+            console.debug(`[WI] Successfully activated ${successfulNewEntries.length} new entries to prompt. ${allActivatedEntries.size} total entries activated.`);
         }
 
         function logNextState(...args) {
@@ -4978,7 +5280,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
         const content = getRegexedString(entry.content, regex_placement.WORLD_INFO, { depth: regexDepth, isMarkdown: false, isPrompt: true });
 
         if (!content) {
-            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content', entry);
+            console.debug(`[WI] Entry ${entry.uid}`, 'skipped adding to prompt due to empty content');
             return;
         }
 
@@ -5048,7 +5350,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     buffer.resetExternalEffects();
     timedEffects.cleanUp();
 
-    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`, Array.from(allActivatedEntries.values()));
+    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`);
     console.debug(`[WI] --- DONE${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
     return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, outletEntries: WIOutletEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };
@@ -5688,16 +5990,16 @@ export async function importWorldInfo(file) {
 
         const data = await result.json();
 
-        if (data.name) {
-            await updateWorldInfoList();
+            if (data.name) {
+                await updateWorldInfoList();
 
-            const newIndex = world_names.indexOf(data.name);
-            if (newIndex >= 0) {
-                $('#world_editor_select').val(newIndex).trigger('change');
-            }
+                const newIndex = world_names.indexOf(data.name);
+                if (newIndex >= 0) {
+                    $('#world_editor_select').val(newIndex).trigger('change');
+                }
 
             toastr.success(t`World Info "${data.name}" imported successfully!`);
-        }
+            }
     } catch (error) {
         console.error('Error importing world info:', error);
         toastr.error(t`Failed to import World Info`);
@@ -5827,11 +6129,11 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid, { deleteOr
         targetData.entries[newUid] = entryToMove;
 
         if (deleteOriginal) {
-            delete sourceData.entries[entryUidString];
-            // Remove from originalData if it exists
-            deleteWIOriginalDataValue(sourceData, entryUidString);
-            // TODO: setWIOriginalDataValue
-            console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
+        delete sourceData.entries[entryUidString];
+        // Remove from originalData if it exists
+        deleteWIOriginalDataValue(sourceData, entryUidString);
+        // TODO: setWIOriginalDataValue
+        console.debug(`[WI Move] Removed entry UID ${entryUidString} from source '${sourceName}'.`);
         }
 
         await saveWorldInfo(targetName, targetData, true);
