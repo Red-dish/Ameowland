@@ -26,22 +26,28 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
         "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", "bb-hailey-Jett", "bb-hailey-Elias"
     ],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan"],
-    "retsukoh": ["bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso","bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle"],
+    "retsukoh": [
+            "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso",
+            "bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto",
+            "bb-retsukoh-sephiroth","bb-retsukoh-vincent"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
-    "dreamweaver":["bb-dreamweaver-Venryk"],
+    "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-DukeKaelan"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
-    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira"],
-    "ravenh":["bb-ravenh-Ryker"],
-    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling"],
-    "sapphira":["bb-sapphira-astinthorne"]
+    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
+    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-liam"],
+    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
+    "sapphira":["bb-sapphira-astinthorne"],
+    "alyrianna":["bb-alyrianna-Alec&Ash"],
+    "luckii": ["bb-luckii-xaden"]
+
 };
 
 

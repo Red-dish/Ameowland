@@ -74,6 +74,69 @@ const API_MOONSHOT = 'https://api.moonshot.ai/v1';
 const API_FIREWORKS = 'https://api.fireworks.ai/inference/v1';
 const API_COMETAPI = 'https://api.cometapi.com/v1';
 
+
+/**
+ * Module-scoped Claude caching configuration values.
+ */
+const cacheTTL = getConfigValue('claude.extendedTTL', false, 'boolean') ? '1h' : '5m';
+const enableSystemPromptCache = getConfigValue('claude.enableSystemPromptCache', false, 'boolean');
+const cachingAtDepth = (() => {
+    const value = getConfigValue('claude.cachingAtDepth', -1, 'number');
+    return Number.isInteger(value) && value >= 0 ? value : -1;
+})();
+
+/**
+ * Cache for cacheable (writing) OpenRouter model IDs.
+ * @type {string[]}
+ */
+const openRouterCacheableModels = [];
+
+/**
+ * Checks if an OpenRouter model supports prompt cache writing.
+ * Uses a cache to avoid repeated API calls.
+ * @param {string} modelId - The OpenRouter model ID
+ * @returns {Promise<boolean>} `true` if the model supports writing cache
+ */
+async function isOpenRouterModelCacheable(modelId) {
+    if (openRouterCacheableModels.includes(modelId)) {
+        return true;
+    }
+
+    try {
+        const response = await fetch(`${API_OPENROUTER}/models`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(5000),
+        });
+
+        if (!response.ok) {
+            console.warn(`OpenRouter models API returned ${response.status}: ${response.statusText}`);
+            return false;
+        }
+
+        /** @type {any} */
+        const data = await response.json();
+
+        if (!Array.isArray(data?.data)) {
+            console.warn('OpenRouter API response format unexpected');
+            return false;
+        }
+
+        const model = data.data.find(m => m.id === modelId);
+        const supportsCache = model?.pricing?.input_cache_write != null;
+
+        if (supportsCache) {
+            openRouterCacheableModels.push(modelId);
+        }
+
+        return supportsCache;
+    } catch (error) {
+        console.warn(`Failed to check OpenRouter cache support for ${modelId}:`, error.message);
+        return false;
+    }
+}
+
+
 /**
  * Gets OpenRouter transforms based on the request.
  * @param {import('express').Request} request Express request
@@ -131,12 +194,6 @@ async function sendClaudeRequest(request, response) {
     const apiUrl = new URL(request.body.reverse_proxy || API_CLAUDE).toString();
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.CLAUDE);
     const divider = '-'.repeat(process.stdout.columns);
-    const enableSystemPromptCache = getConfigValue('claude.enableSystemPromptCache', false, 'boolean');
-    let cachingAtDepth = getConfigValue('claude.cachingAtDepth', -1, 'number');
-    // Disabled if not an integer or negative
-    if (!Number.isInteger(cachingAtDepth) || cachingAtDepth < 0) {
-        cachingAtDepth = -1;
-    }
 
     if (!apiKey) {
         console.warn(color.red(`Claude API key is missing.\n${divider}`));
@@ -152,12 +209,12 @@ async function sendClaudeRequest(request, response) {
         const additionalHeaders = {};
         const betaHeaders = ['output-128k-2025-02-19'];
         const useTools = Array.isArray(request.body.tools) && request.body.tools.length > 0;
-        const useSystemPrompt = Boolean(request.body.claude_use_sysprompt);
+        const useSystemPrompt = Boolean(request.body.use_sysprompt);
         const convertedPrompt = convertClaudeMessages(request.body.messages, request.body.assistant_prefill, useSystemPrompt, useTools, getPromptNames(request));
-        const useThinking = /^claude-(3-7|opus-4|sonnet-4)/.test(request.body.model);
-        const useWebSearch = /^claude-(3-5|3-7|opus-4|sonnet-4)/.test(request.body.model) && Boolean(request.body.enable_web_search);
-        const isOpus41 = /^claude-opus-4-1/.test(request.body.model);
-        const cacheTTL = getConfigValue('claude.extendedTTL', false, 'boolean') ? '1h' : '5m';
+        const useThinking = /^claude-(3-7|opus-4|sonnet-4|haiku-4-5|opus-4-5)/.test(request.body.model);
+        const useWebSearch = /^claude-(3-5|3-7|opus-4|sonnet-4|haiku-4-5|opus-4-5)/.test(request.body.model) && Boolean(request.body.enable_web_search);
+        const isLimitedSampling = /^claude-(opus-4-1|sonnet-4-5|haiku-4-5|opus-4-5)/.test(request.body.model);
+        const useVerbosity = /^claude-(opus-4-5)/.test(request.body.model);
         let fixThinkingPrefill = false;
         // Add custom stop sequences
         const stopSequences = [];
@@ -178,7 +235,7 @@ async function sendClaudeRequest(request, response) {
         };
         if (useSystemPrompt) {
             if (enableSystemPromptCache && Array.isArray(convertedPrompt.systemPrompt) && convertedPrompt.systemPrompt.length) {
-                convertedPrompt.systemPrompt[convertedPrompt.systemPrompt.length - 1]['cache_control'] = { type: 'ephemeral', ttl: cacheTTL };
+                convertedPrompt.systemPrompt[convertedPrompt.systemPrompt.length - 1].cache_control = { type: 'ephemeral', ttl: cacheTTL };
             }
 
             requestBody.system = convertedPrompt.systemPrompt;
@@ -194,7 +251,7 @@ async function sendClaudeRequest(request, response) {
                 .map(fn => ({ name: fn.name, description: fn.description, input_schema: flattenSchema(fn.parameters, request.body.chat_completion_source) }));
 
             if (enableSystemPromptCache && requestBody.tools.length) {
-                requestBody.tools[requestBody.tools.length - 1]['cache_control'] = { type: 'ephemeral', ttl: cacheTTL };
+                requestBody.tools[requestBody.tools.length - 1].cache_control = { type: 'ephemeral', ttl: cacheTTL };
             }
         }
 
@@ -226,7 +283,7 @@ async function sendClaudeRequest(request, response) {
             betaHeaders.push('extended-cache-ttl-2025-04-11');
         }
 
-        if (isOpus41) {
+        if (isLimitedSampling) {
             if (requestBody.top_p < 1) {
                 delete requestBody.temperature;
             } else {
@@ -260,6 +317,13 @@ async function sendClaudeRequest(request, response) {
 
         if (fixThinkingPrefill && convertedPrompt.messages.length && convertedPrompt.messages[convertedPrompt.messages.length - 1].role === 'assistant') {
             convertedPrompt.messages[convertedPrompt.messages.length - 1].role = 'user';
+        }
+
+        // Verbosity = 'effort' (same values as OpenAI)
+        if (useVerbosity && request.body.verbosity) {
+            betaHeaders.push('effort-2025-11-24');
+            requestBody.output_config ??= {};
+            requestBody.output_config.effort = request.body.verbosity;
         }
 
         if (betaHeaders.length) {
