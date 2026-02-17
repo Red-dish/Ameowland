@@ -65,7 +65,7 @@ import { getRegexedString, regex_placement } from './extensions/regex/engine.js'
 import { findGroupMemberId, groups, is_group_generating, openGroupById, resetSelectedGroup, saveGroupChat, selected_group, getGroupMembers } from './group-chats.js';
 import { chat_completion_sources, oai_settings, promptManager, ZAI_ENDPOINT } from './openai.js';
 import { user_avatar } from './personas.js';
-import { addEphemeralStoppingString, chat_styles, context_presets, flushEphemeralStoppingStrings, power_user } from './power-user.js';
+import { addEphemeralStoppingString, chat_styles, context_presets, flushEphemeralStoppingStrings, playMessageSound, power_user } from './power-user.js';
 import { SERVER_INPUTS, textgen_types, textgenerationwebui_settings } from './textgen-settings.js';
 import { decodeTextTokens, getAvailableTokenizers, getFriendlyTokenizerName, getTextTokens, getTokenCountAsync, selectTokenizer } from './tokenizers.js';
 import { debounce, delay, equalsIgnoreCaseAndAccents, findChar, getCharIndex, isFalseBoolean, isTrueBoolean, onlyUnique, regexFromString, showFontAwesomePicker, stringToRange, trimToEndSentence, trimToStartSentence, waitUntilCondition } from './utils.js';
@@ -677,9 +677,7 @@ export function initDefaultSlashCommands() {
             SlashCommandArgument.fromProps({
                 description: t`background filename`,
                 typeList: [ARGUMENT_TYPE.STRING],
-                enumProvider: () => [...document.querySelectorAll('.bg_example')]
-                    .map(it => new SlashCommandEnumValue(it.getAttribute('bgfile')))
-                    .filter(it => it.value?.length),
+                enumProvider: commonEnumProviders.backgrounds,
             }),
         ],
         helpString: `
@@ -3026,8 +3024,7 @@ export function initDefaultSlashCommands() {
             try {
                 const text = await navigator.clipboard.readText();
                 return text;
-            }
-            catch (error) {
+            } catch (error) {
                 console.error('Error reading clipboard:', error);
                 toastr.warning(t`Failed to read clipboard text. Have you granted the permission?`);
                 return '';
@@ -3101,6 +3098,59 @@ export function initDefaultSlashCommands() {
 
             return oai_settings.custom_prompt_post_processing;
         },
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'reroll-pick',
+        callback: (_, value) => {
+            const currentSeed = chat_metadata.pick_reroll_seed ?? 0;
+            const parsedValue = value ? parseInt(String(value), 10) : NaN;
+
+            if (!isNaN(parsedValue)) {
+                chat_metadata.pick_reroll_seed = parsedValue;
+            } else {
+                chat_metadata.pick_reroll_seed = currentSeed + 1;
+            }
+
+            saveMetadataDebounced();
+            return String(chat_metadata.pick_reroll_seed);
+        },
+        returns: t`The new reroll seed value.`,
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: t`Optional seed value to set. If not provided, increments current seed by 1.`,
+                typeList: [ARGUMENT_TYPE.NUMBER],
+            }),
+        ],
+        helpString: `
+            <div>
+                ${t`Rerolls all <code>{{pick}}</code> macro choices in the current chat.`}
+            </div>
+            <div>
+                ${t`The <code>{{pick}}</code> macro normally keeps stable choices per chat. This command changes the seed used for all picks, causing them to resolve to (possibly) different values.`}
+            </div>
+            <div>
+                ${t`If a number is provided, sets the seed to that value. Otherwise, increments the current seed by 1.`}
+            </div>
+            <div>
+                <strong>${t`Example:`}</strong>
+                <ul>
+                    <li><pre><code>/reroll-pick</code></pre> ${t`Increments the seed by 1.`}</li>
+                    <li><pre><code>/reroll-pick 5</code></pre> ${t`Sets the seed to 5.`}</li>
+                </ul>
+            </div>
+        `,
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'beep',
+        aliases: ['ding'],
+        returns: t`an empty string`,
+        callback: async () => {
+            playMessageSound({ force: true });
+            return '';
+        },
+        helpString: t`Plays the message received sound effect.`,
     }));
 
     registerVariableCommands();
@@ -4379,8 +4429,7 @@ async function sendUserMessageCallback(args, text) {
         const name = args.name || '';
         const avatar = findPersonaByName(name) || user_avatar;
         message = await sendMessageAsUser(text, bias, insertAt, compact, name, avatar);
-    }
-    else {
+    } else {
         message = await sendMessageAsUser(text, bias, insertAt, compact);
     }
 
@@ -4587,12 +4636,10 @@ export function getNameAndAvatarForMessage(character, name = null) {
     let force_avatar, original_avatar;
     if (character?.avatar === currentChar?.avatar || isNeutralCharacter) {
         // If the targeted character is the currently selected one in a solo chat, we don't need to force any avatars
-    }
-    else if (character && character.avatar !== 'none') {
+    } else if (character && character.avatar !== 'none') {
         force_avatar = getThumbnailUrl('avatar', character.avatar);
         original_avatar = character.avatar;
-    }
-    else {
+    } else {
         force_avatar = default_avatar;
         original_avatar = default_avatar;
     }
@@ -4863,7 +4910,6 @@ export async function sendNarratorMessage(args, text) {
 }
 
 export async function promptQuietForLoudResponse(who, text) {
-
     let character_id = getContext().characterId;
     if (who === 'sys') {
         text = 'System: ' + text;
@@ -4902,7 +4948,6 @@ export async function promptQuietForLoudResponse(who, text) {
     addOneMessage(message);
     await eventSource.emit(event_types.USER_MESSAGE_RENDERED, (chat.length - 1));
     await saveChatConditional();
-
 }
 
 async function sendCommentMessage(args, text) {

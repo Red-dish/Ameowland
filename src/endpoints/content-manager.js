@@ -152,25 +152,10 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
             continue;
         }
 
-        // Symlink for both WORLD and CHARACTER types
-        if (contentItem.type === CONTENT_TYPES.WORLD || contentItem.type === CONTENT_TYPES.CHARACTER) {
-            try {
-                fs.symlinkSync(contentPath, targetPath, 'file');
-                console.info(`Created symlink for ${contentItem.filename} to ${targetPath}`);
-                anyContentAdded = true;
-            } catch (err) {
-                console.error(`Failed to create symlink for ${contentItem.filename}: ${err.message}`);
-                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-                fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-                console.info(`Copied ${contentItem.filename} to ${targetPath} as fallback`);
-                anyContentAdded = true;
-            }
-        } else {
-            fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-            fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-            console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
-            anyContentAdded = true;
-        }
+        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        setPermissionsSync(targetPath);
+        console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
+        anyContentAdded = true;
     }
 
     writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
@@ -887,7 +872,7 @@ function getUuidFromUrl(url) {
  * @param {String} url URL to strip
  * @returns {String} Domain name
  */
-function getHostFromUrl(url) {
+export function getHostFromUrl(url) {
     try {
         const urlObj = new URL(url);
         return urlObj.hostname;
@@ -901,7 +886,7 @@ function getHostFromUrl(url) {
  * @param {String} host Host to check
  * @returns {boolean} If the host is on the whitelist.
  */
-function isHostWhitelisted(host) {
+export function isHostWhitelisted(host) {
     return WHITELIST_GENERIC_URL_DOWNLOAD_SOURCES.includes(host);
 }
 
@@ -956,12 +941,10 @@ router.post('/importURL', async (request, response) => {
             if (chubParsed?.type === 'character') {
                 console.info('Downloading chub character:', chubParsed.id);
                 result = await downloadChubCharacter(chubParsed.id);
-            }
-            else if (chubParsed?.type === 'lorebook') {
+            } else if (chubParsed?.type === 'lorebook') {
                 console.info('Downloading chub lorebook:', chubParsed.id);
                 result = await downloadChubLorebook(chubParsed.id);
-            }
-            else {
+            } else {
                 return response.sendStatus(404);
             }
         } else if (isRisu) {
@@ -1035,12 +1018,10 @@ router.post('/importUUID', async (request, response) => {
             if (uuidType === 'character') {
                 console.info('Downloading chub character:', uuid);
                 result = await downloadChubCharacter(uuid);
-            }
-            else if (uuidType === 'lorebook') {
+            } else if (uuidType === 'lorebook') {
                 console.info('Downloading chub lorebook:', uuid);
                 result = await downloadChubLorebook(uuid);
-            }
-            else {
+            } else {
                 return response.sendStatus(404);
             }
         }

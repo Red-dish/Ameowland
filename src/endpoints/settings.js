@@ -58,8 +58,7 @@ function readAndParseFromDirectory(directoryPath, fileExtension = '.json') {
         try {
             const file = fs.readFileSync(path.join(directoryPath, item), 'utf-8');
             parsedFiles.push(fileExtension == '.json' ? JSON.parse(file) : file);
-        }
-        catch {
+        } catch {
             // skip
         }
     });
@@ -201,35 +200,6 @@ export const router = express.Router();
 
 router.post('/save', function (request, response) {
     try {
-        const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
-        writeFileAtomicSync(pathToSettings, JSON.stringify(request.body, null, 4), 'utf8');
-        triggerAutoSave(request.user.profile.handle);
-        response.send({ result: 'ok' });
-    } catch (err) {
-        console.error(err);
-        response.send(err);
-    }
-});
-
-//ameow\
-router.get('/role', (request, response) => {
-    console.log('Request to /role:', {
-        user: request.user,
-        session: request.session,
-        cookies: request.headers.cookie
-    });
-    if (!request.user) {
-        return response.status(403).send({ error: 'User not authenticated', role: 'anonymous' });
-    }
-    const role = request.user.profile.admin ? 'admin' : 'user'; // Fixed to use profile.admin
-    return response.send({ role });
-});
-
-router.post('/save', function (request, response) {
-    try {
-        if (!request.user?.admin) {
-            return response.status(403).send({ error: 'Only admins can save settings' });
-        }
         const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
         writeFileAtomicSync(pathToSettings, JSON.stringify(request.body, null, 4), 'utf8');
         triggerAutoSave(request.user.profile.handle);
