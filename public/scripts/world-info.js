@@ -27,7 +27,7 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows"],
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel"],
     "hailey": [
         "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
         "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
