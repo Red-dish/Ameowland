@@ -92,10 +92,9 @@ class GptSovitsV2Provider {
         }
 
         // Set initial values from the settings
-        $('#tts_endpoint').val(this.settings.provider_endpoint);
-        $('#text_lang').val(this.settings.text_lang);
-        $('#prompt_lang').val(this.settings.prompt_lang);
-
+        $('#tts_endpoint').val(this.settings.provider_endpoint).on('change', this.onSettingsChange.bind(this));
+        $('#text_lang').val(this.settings.text_lang).on('change', this.onSettingsChange.bind(this));
+        $('#prompt_lang').val(this.settings.prompt_lang).on('change', this.onSettingsChange.bind(this));
 
         await this.checkReady();
 
@@ -108,7 +107,7 @@ class GptSovitsV2Provider {
     }
 
     async onRefreshClick() {
-        return;
+        return await this.checkReady();
     }
 
     //#################//
@@ -116,13 +115,9 @@ class GptSovitsV2Provider {
     //#################//
 
     async getVoice(voiceName) {
-
-
-
         if (this.voices.length == 0) {
             this.voices = await this.fetchTtsVoiceObjects();
         }
-
 
 
         const match = this.voices.filter(
@@ -134,7 +129,6 @@ class GptSovitsV2Provider {
         }
         return match;
     }
-
 
 
     async generateTts(text, voiceId) {
@@ -170,8 +164,6 @@ class GptSovitsV2Provider {
      * @param {string} voiceId Voice ID to use (model_type&speaker_id))
      * @returns {Promise<Response|string>} Fetch response
      */
-
-
 
 
     async fetchTtsGeneration(inputText, voiceId, lang = null, forceNoStreaming = false) {
@@ -214,7 +206,6 @@ class GptSovitsV2Provider {
         }
         return response;
     }
-
 
 
     // Interface not used

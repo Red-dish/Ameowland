@@ -68,7 +68,7 @@ class DataMaidDialog {
     async getReport() {
         const response = await fetch('/api/data-maid/report', {
             method: 'POST',
-            headers: getRequestHeaders(),
+            headers: getRequestHeaders({ omitContentType: true }),
         });
 
         if (!response.ok) {
@@ -251,7 +251,6 @@ class DataMaidDialog {
                 categoryElement.remove();
                 this.displayEmptyPlaceholder();
             });
-
         });
         categoryElement.querySelectorAll('.dataMaidItemDelete').forEach(button => {
             button.addEventListener('click', async () => {

@@ -40,6 +40,7 @@ export const enumIcons = {
     server: '🖥️',
     popup: '🗔',
     image: '🖼️',
+    video: '🎥',
     key: '🔑',
 
     true: '✔️',
@@ -154,7 +155,7 @@ export const commonEnumProviders = {
             ...isAll || types.includes('scope') ? scope.allVariableNames.map(name => new SlashCommandEnumValue(name, null, enumTypes.variable, enumIcons.scopeVariable)) : [],
             ...isAll || types.includes('local') ? Object.keys(chat_metadata.variables ?? []).map(name => new SlashCommandEnumValue(name, null, enumTypes.name, enumIcons.localVariable)) : [],
             ...isAll || types.includes('global') ? Object.keys(extension_settings.variables.global ?? []).map(name => new SlashCommandEnumValue(name, null, enumTypes.macro, enumIcons.globalVariable)) : [],
-        ].filter((item, idx, list)=>idx == list.findIndex(it=>it.value == item.value));
+        ].filter((item, idx, list) => idx == list.findIndex(it => it.value == item.value));
     },
 
     /**
@@ -263,6 +264,22 @@ export const commonEnumProviders = {
     },
 
     /**
+     * Media items attached to a specific message
+     * @returns {(executor:SlashCommandExecutor, scope:SlashCommandScope) => SlashCommandEnumValue[]}
+     */
+    messageMedia: () => (executor, _scope) => {
+        const messageId = Number(executor.namedArgumentList.find(it => ['mesId', 'id'].includes(it.name))?.value || '');
+        if (isNaN(messageId) || messageId === null || messageId < 0 || messageId >= chat.length) {
+            return [];
+        }
+        const message = chat[messageId];
+        if (!Array.isArray(message?.extra?.media)) {
+            return [];
+        }
+        return message.extra.media.map((media, index) => new SlashCommandEnumValue(index.toString(), media.title || message.extra.title || '[Untitled]', enumTypes.enum, enumIcons[media.type] || enumIcons.file));
+    },
+
+    /**
      * All names used in the current chat.
      *
      * @returns {SlashCommandEnumValue[]}
@@ -312,4 +329,14 @@ export const commonEnumProviders = {
         new SlashCommandEnumValue('null', null, enumTypes.type, enumIcons.null),
         new SlashCommandEnumValue('undefined', null, enumTypes.type, enumIcons.undefined),
     ],
+
+    messageRoles: () => [
+        new SlashCommandEnumValue('user', null, enumTypes.enum, enumIcons.user),
+        new SlashCommandEnumValue('assistant', null, enumTypes.enum, enumIcons.assistant),
+        new SlashCommandEnumValue('system', null, enumTypes.enum, enumIcons.system),
+    ],
+
+    backgrounds: () => Array.from(document.querySelectorAll('.bg_example'))
+        .map(it => new SlashCommandEnumValue(it.getAttribute('bgfile')))
+        .filter(it => it.value?.length),
 };

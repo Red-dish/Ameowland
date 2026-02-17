@@ -1,12 +1,15 @@
 import { Fuse, localforage } from '../lib.js';
-import { chat_metadata, eventSource, event_types, generateQuietPrompt, getCurrentChatId, getRequestHeaders, getThumbnailUrl, saveSettingsDebounced } from '../script.js';
+import { characters, chat_metadata, eventSource, event_types, generateQuietPrompt, getCurrentChatId, getRequestHeaders, getThumbnailUrl, saveMetadata, saveSettingsDebounced, this_chid } from '../script.js';
 import { openThirdPartyExtensionMenu, saveMetadataDebounced } from './extensions.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
-import { createThumbnail, flashHighlight, getBase64Async, stringFormat, debounce } from './utils.js';
+import { createThumbnail, flashHighlight, getBase64Async, stringFormat, debounce, setupScrollToTop, saveBase64AsFile, getFileExtension, sortIgnoreCaseAndAccents } from './utils.js';
 import { debounce_timeout } from './constants.js';
 import { t } from './i18n.js';
 import { Popup } from './popup.js';
+import { groups, selected_group } from './group-chats.js';
+import { humanizedDateTime } from './RossAscends-mods.js';
+import { deleteMediaFromServer } from './chats.js';
 
 const BG_METADATA_KEY = 'custom_background';
 const LIST_METADATA_KEY = 'chat_backgrounds';
@@ -39,17 +42,97 @@ const THUMBNAIL_CONFIG = {
 };
 
 /**
+ * Cache for image metadata.
+ * @type {Map<string, import('../../src/endpoints/image-metadata.js').ImageMetadata>}
+ */
+const METADATA_CACHE = new Map();
+
+/**
+ * Background source types.
+ * @readonly
+ * @enum {number}
+ */
+const BG_SOURCES = {
+    GLOBAL: 0,
+    CHAT: 1,
+};
+
+/**
+ * Background sorting options.
+ * @readonly
+ * @enum {string}
+ */
+const BG_SORT_OPTIONS = {
+    AZ: 'az',
+    ZA: 'za',
+    NEWEST: 'newest',
+    OLDEST: 'oldest',
+};
+
+/**
+ * Mapping of background sources to their corresponding tab IDs.
+ * @readonly
+ * @type {Record<string, string>}
+ */
+const BG_TABS = Object.freeze({
+    [BG_SOURCES.GLOBAL]: 'bg_global_tab',
+    [BG_SOURCES.CHAT]: 'bg_chat_tab',
+});
+
+/**
  * Global IntersectionObserver instance for lazy loading backgrounds
  * @type {IntersectionObserver|null}
  */
 let lazyLoadObserver = null;
+
+/**
+ * Cache for the current list of system background filenames.
+ * Used to re-sort backgrounds without refetching from the server.
+ * @type {string[]}
+ */
+let cachedSystemBackgrounds = [];
 
 export let background_settings = {
     name: '__transparent.png',
     url: generateUrlParameter('__transparent.png', false),
     fitting: 'classic',
     animation: false,
+    sortOrder: BG_SORT_OPTIONS.AZ,
 };
+
+/**
+ * Sorts an array of background filenames based on the current sort order.
+ * @param {string[]} backgrounds - Array of background filenames
+ * @param {boolean} isCustom - Whether these are custom (chat) backgrounds
+ * @returns {string[]} Sorted array of background filenames
+ */
+function sortBackgrounds(backgrounds, isCustom = false) {
+    const sortOrder = background_settings.sortOrder || BG_SORT_OPTIONS.AZ;
+
+    return [...backgrounds].sort((a, b) => {
+        switch (sortOrder) {
+            case BG_SORT_OPTIONS.AZ:
+                return sortIgnoreCaseAndAccents(a, b);
+            case BG_SORT_OPTIONS.ZA:
+                return sortIgnoreCaseAndAccents(b, a);
+            case BG_SORT_OPTIONS.NEWEST:
+            case BG_SORT_OPTIONS.OLDEST: {
+                const keyA = isCustom ? a : `backgrounds/${a}`;
+                const keyB = isCustom ? b : `backgrounds/${b}`;
+                const metaA = METADATA_CACHE.get(keyA);
+                const metaB = METADATA_CACHE.get(keyB);
+                const timestampA = metaA?.addedTimestamp ?? 0;
+                const timestampB = metaB?.addedTimestamp ?? 0;
+                // Newest first (descending) or oldest first (ascending)
+                return sortOrder === BG_SORT_OPTIONS.NEWEST
+                    ? timestampB - timestampA
+                    : timestampA - timestampB;
+            }
+            default:
+                return 0;
+        }
+    });
+}
 
 /**
  * Creates a single thumbnail DOM element. The CSS now handles all sizing.
@@ -65,6 +148,18 @@ function createThumbnailElement(imageData) {
     const clipper = document.createElement('div');
     clipper.className = 'thumbnail-clipper lazy-load-background';
     clipper.style.backgroundImage = PLACEHOLDER_IMAGE;
+
+    // Apply dominant color and aspect ratio as placeholder if available
+    const metadataKey = isCustom ? bg : `backgrounds/${bg}`;
+    const metadata = METADATA_CACHE.get(metadataKey);
+    if (metadata) {
+        if (metadata.dominantColor) {
+            clipper.style.backgroundColor = metadata.dominantColor;
+        }
+        if (metadata.aspectRatio) {
+            thumbnail.css('aspect-ratio', metadata.aspectRatio);
+        }
+    }
 
     const titleElement = thumbnail.find('.BGSampleTitle');
     clipper.appendChild(titleElement.get(0));
@@ -109,6 +204,9 @@ export function loadBackgroundSettings(settings) {
     if (!Object.hasOwn(backgroundSettings, 'animation')) {
         backgroundSettings.animation = false;
     }
+    if (!backgroundSettings.sortOrder) {
+        backgroundSettings.sortOrder = BG_SORT_OPTIONS.AZ;
+    }
 
     // If a value is already saved, use it. Otherwise, determine default based on screen size.
     let columns = backgroundSettings.thumbnailColumns;
@@ -117,12 +215,15 @@ export function loadBackgroundSettings(settings) {
         columns = isNarrowScreen ? THUMBNAIL_COLUMNS_DEFAULT_MOBILE : THUMBNAIL_COLUMNS_DEFAULT_DESKTOP;
     }
     background_settings.thumbnailColumns = columns;
+    background_settings.sortOrder = backgroundSettings.sortOrder;
     applyThumbnailColumns(background_settings.thumbnailColumns);
 
     setBackground(backgroundSettings.name, backgroundSettings.url);
     setFittingClass(backgroundSettings.fitting);
     $('#background_fitting').val(backgroundSettings.fitting);
     $('#background_thumbnails_animation').prop('checked', background_settings.animation);
+    $('#bg-sort').val(background_settings.sortOrder);
+    highlightSelectedBackground();
 }
 
 /**
@@ -131,7 +232,7 @@ export function loadBackgroundSettings(settings) {
  */
 async function forceSetBackground(backgroundInfo) {
     saveBackgroundMetadata(backgroundInfo.url);
-    setCustomBackground();
+    $('#bg1').css('background-image', backgroundInfo.url);
 
     const list = chat_metadata[LIST_METADATA_KEY] || [];
     const bg = backgroundInfo.path;
@@ -144,75 +245,83 @@ async function forceSetBackground(backgroundInfo) {
 }
 
 async function onChatChanged() {
-    if (hasCustomBackground()) {
-        setCustomBackground();
-    }
-    else {
-        unsetCustomBackground();
-    }
+    const lockedUrl = chat_metadata[BG_METADATA_KEY];
+
+    $('#bg1').css('background-image', lockedUrl || background_settings.url);
 
     renderChatBackgrounds();
     highlightLockedBackground();
+    highlightSelectedBackground();
 }
 
-function getBackgroundPath(fileUrl) {
+/**
+ * Checks if a given URL corresponds to a custom background in the current chat's metadata.
+ * @param {string} fileUrl - The URL to check against the chat's custom backgrounds.
+ * @returns {boolean} True if the URL corresponds to a custom background, false otherwise.
+ */
+export function isCustomBackgroundUrl(fileUrl) {
+    const customBackgrounds = chat_metadata[LIST_METADATA_KEY] || [];
+    return customBackgrounds.some(bg => bg === fileUrl || generateUrlParameter(bg, true) === fileUrl);
+}
+
+/**
+ * Gets the client path for a background image, encoding the file name for safe URL usage.
+ * @param {string} fileUrl File name or URL of the background image
+ * @returns {string} Client path for the system backgroun
+ */
+export function getBackgroundPath(fileUrl) {
     return `backgrounds/${encodeURIComponent(fileUrl)}`;
 }
 
 function highlightLockedBackground() {
-    $('.bg_example').removeClass('locked');
+    $('.bg_example.locked-background').removeClass('locked-background');
 
-    const lockedBackground = chat_metadata[BG_METADATA_KEY];
+    const lockedBackgroundUrl = chat_metadata[BG_METADATA_KEY];
 
-    if (!lockedBackground) {
+    if (lockedBackgroundUrl) {
+        $('.bg_example').filter(function () {
+            return $(this).data('url') === lockedBackgroundUrl;
+        }).addClass('locked-background');
+    }
+}
+
+/**
+ * Locks the background for the current chat
+ * @param {Event|null} event
+ */
+function onLockBackgroundClick(event = null) {
+    if (!getCurrentChatId()) {
+        toastr.warning(t`Select a chat to lock the background for it`);
         return;
     }
 
-    $('.bg_example').each(function () {
-        const url = $(this).data('url');
-        if (url === lockedBackground) {
-            $(this).addClass('locked');
-        }
-    });
-}
+    // Take the global background's URL and save it to the chat's metadata.
+    const urlToLock = event ? $(event.target).closest('.bg_example').data('url') : background_settings.url;
+    saveBackgroundMetadata(urlToLock);
+    $('#bg1').css('background-image', urlToLock);
 
-/**
- * Locks the background for the current chat
- * @param {Event} e Click event
- * @returns {string} Empty string
- */
-function onLockBackgroundClick(e) {
-    e?.stopPropagation();
-
-    const chatName = getCurrentChatId();
-
-    if (!chatName) {
-        toastr.warning('Select a chat to lock the background for it');
-        return '';
-    }
-
-    const relativeBgImage = getUrlParameter(this) ?? background_settings.url;
-
-    saveBackgroundMetadata(relativeBgImage);
-    setCustomBackground();
+    // Update UI states to reflect the new lock.
     highlightLockedBackground();
-    return '';
+    highlightSelectedBackground();
 }
 
 /**
- * Locks the background for the current chat
- * @param {Event} e Click event
- * @returns {string} Empty string
+ * Unlocks the background for the current chat
+ * @param {Event|null} _event
  */
-function onUnlockBackgroundClick(e) {
-    e?.stopPropagation();
+function onUnlockBackgroundClick(_event = null) {
+    // Delete the lock from the chat's metadata.
     removeBackgroundMetadata();
-    unsetCustomBackground();
+
+    // Revert the view to the current global background.
+    $('#bg1').css('background-image', background_settings.url);
+
+    // Update UI states to reflect the removal of the lock.
     highlightLockedBackground();
-    return '';
+    highlightSelectedBackground();
 }
 
-function hasCustomBackground() {
+function isChatBackgroundLocked() {
     return chat_metadata[BG_METADATA_KEY];
 }
 
@@ -226,54 +335,28 @@ function removeBackgroundMetadata() {
     saveMetadataDebounced();
 }
 
-function setCustomBackground() {
-    const file = chat_metadata[BG_METADATA_KEY];
-
-    // bg already set
-    if (document.getElementById('bg_custom').style.backgroundImage == file) {
-        return;
-    }
-
-    $('#bg_custom').css('background-image', file);
-}
-
-function unsetCustomBackground() {
-    $('#bg_custom').css('background-image', 'none');
-}
-
-function onSelectBackgroundClick() {
-    const isCustom = $(this).attr('custom') === 'true';
-    const relativeBgImage = getUrlParameter(this);
-
-    // if clicked on upload button
-    if (!relativeBgImage) {
-        return;
-    }
-
-    // Automatically lock the background if it's custom or other background is locked
-    if (hasCustomBackground() || isCustom) {
-        saveBackgroundMetadata(relativeBgImage);
-        setCustomBackground();
-        highlightLockedBackground();
-    }
-    highlightLockedBackground();
-
-    const customBg = window.getComputedStyle(document.getElementById('bg_custom')).backgroundImage;
-
-    // Custom background is set. Do not override the layer below
-    if (customBg !== 'none') {
-        return;
-    }
-
+/**
+ * Handles the click event for selecting a background.
+ * @param {JQuery.Event} e Event
+ */
+function onSelectBackgroundClick(e) {
     const bgFile = $(this).attr('bgfile');
-    const backgroundUrl = getBackgroundPath(bgFile);
+    const isCustom = $(this).attr('custom') === 'true';
+    const backgroundCssUrl = getUrlParameter(this);
+    const bypassGlobalLock = !isCustom && e.shiftKey;
 
-    // Fetching to browser memory to reduce flicker
-    fetch(backgroundUrl).then(() => {
-        setBackground(bgFile, relativeBgImage);
-    }).catch(() => {
-        console.log('Background could not be set: ' + backgroundUrl);
-    });
+    if ((isChatBackgroundLocked() || isCustom) && !bypassGlobalLock) {
+        // If a background is locked, update the locked background directly
+        saveBackgroundMetadata(backgroundCssUrl);
+        $('#bg1').css('background-image', backgroundCssUrl);
+    } else {
+        // Otherwise, update the global background setting
+        setBackground(bgFile, backgroundCssUrl);
+    }
+
+    // Update UI highlights to reflect the changes.
+    highlightLockedBackground();
+    highlightSelectedBackground();
 }
 
 async function onCopyToSystemBackgroundClick(e) {
@@ -414,20 +497,42 @@ async function onDeleteBackgroundClick(e) {
     const bgToDelete = $(this).closest('.bg_example');
     const url = bgToDelete.data('url');
     const isCustom = bgToDelete.attr('custom') === 'true';
-    const confirm = await Popup.show.confirm(t`Delete the background?`, null);
+    const deleteFromServerId = 'delete_bg_from_server';
+    const customInputs = [
+        {
+            type: 'checkbox',
+            label: t`Also delete file from server`,
+            id: deleteFromServerId,
+            defaultState: true,
+        },
+    ];
+    let deleteFromServer = false;
+    const confirm = await Popup.show.confirm(t`Delete the background?`, null, {
+        customInputs: isCustom ? customInputs : [],
+        onClose: (popup) => {
+            if (isCustom) {
+                deleteFromServer = Boolean(popup?.inputResults?.get(deleteFromServerId) ?? false);
+            }
+        },
+    });
     const bg = bgToDelete.attr('bgfile');
 
     if (confirm) {
         // If it's not custom, it's a built-in background. Delete it from the server
         if (!isCustom) {
-            delBackground(bg);
+            await delBackground(bg);
+            // Remove from cache to prevent reappearing on sort change
+            const cacheIndex = cachedSystemBackgrounds.indexOf(bg);
+            if (cacheIndex !== -1) {
+                cachedSystemBackgrounds.splice(cacheIndex, 1);
+            }
         } else {
             const list = chat_metadata[LIST_METADATA_KEY] || [];
             const index = list.indexOf(bg);
             list.splice(index, 1);
         }
 
-        if (bg === background_settings.name) {
+        if (bg === background_settings.name || url === chat_metadata[BG_METADATA_KEY]) {
             const siblingSelector = '.bg_example';
             const nextBg = bgToDelete.next(siblingSelector);
             const prevBg = bgToDelete.prev(siblingSelector);
@@ -448,14 +553,18 @@ async function onDeleteBackgroundClick(e) {
 
         if (url === chat_metadata[BG_METADATA_KEY]) {
             removeBackgroundMetadata();
-            unsetCustomBackground();
-            highlightLockedBackground();
         }
 
         if (isCustom) {
+            if (deleteFromServer) {
+                await deleteMediaFromServer(bg);
+            }
             renderChatBackgrounds();
-            saveMetadataDebounced();
+            await saveMetadata();
         }
+
+        highlightLockedBackground();
+        highlightSelectedBackground();
     }
 }
 
@@ -505,7 +614,8 @@ function renderSystemBackgrounds(backgrounds) {
 
     if (sourceList.length === 0) return;
 
-    sourceList.forEach(bg => {
+    const sortedList = sortBackgrounds(sourceList, false);
+    sortedList.forEach(bg => {
         const imageData = { filename: bg, isCustom: false };
         const thumbnail = createThumbnailElement(imageData);
         container.append(thumbnail);
@@ -526,7 +636,8 @@ function renderChatBackgrounds(backgrounds) {
 
     if (sourceList.length === 0) return;
 
-    sourceList.forEach(bg => {
+    const sortedList = sortBackgrounds(sourceList, true);
+    sortedList.forEach(bg => {
         const imageData = { filename: bg, isCustom: true };
         const thumbnail = createThumbnailElement(imageData);
         container.append(thumbnail);
@@ -536,6 +647,8 @@ function renderChatBackgrounds(backgrounds) {
 }
 
 export async function getBackgrounds() {
+    const metadataPromise = preloadImageMetadata();
+
     const response = await fetch('/api/backgrounds/all', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -544,7 +657,38 @@ export async function getBackgrounds() {
     if (response.ok) {
         const { images, config } = await response.json();
         Object.assign(THUMBNAIL_CONFIG, config);
+
+        cachedSystemBackgrounds = images;
+
+        await metadataPromise;
+
         renderSystemBackgrounds(images);
+        highlightSelectedBackground();
+    }
+}
+
+/**
+ * Preloads all image metadata to use dominant colors as placeholders.
+ * @return {Promise<void>}
+ */
+async function preloadImageMetadata() {
+    try {
+        const response = await fetch('/api/image-metadata/all', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ prefix: 'backgrounds/' }),
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data?.images) {
+                METADATA_CACHE.clear();
+                for (const [path, metadata] of Object.entries(data.images)) {
+                    METADATA_CACHE.set(path, metadata);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[ImageMetadata] Failed to preload metadata:', error);
     }
 }
 
@@ -620,7 +764,10 @@ async function resolveImageUrl(bg, isCustom) {
 }
 
 async function setBackground(bg, url) {
-    $('#bg1').css('background-image', url);
+    // Only change the visual background if one is not locked for the current chat.
+    if (!isChatBackgroundLocked()) {
+        $('#bg1').css('background-image', url);
+    }
     background_settings.name = bg;
     background_settings.url = url;
     saveSettingsDebounced();
@@ -642,25 +789,43 @@ async function delBackground(bg) {
     }
 }
 
-async function onBackgroundUploadSelected() {
-    const form = $('#form_bg_upload').get(0);
+/**
+ * Background upload handler.
+ * @param {Event} e Event
+ * @returns {Promise<void>}
+ */
+async function onBackgroundUploadSelected(e) {
+    const input = e.currentTarget;
 
-    if (!(form instanceof HTMLFormElement)) {
-        console.error('form_bg_upload is not a form');
+    if (!(input instanceof HTMLInputElement)) {
+        console.error('Invalid input element for background upload');
         return;
     }
 
-    const formData = new FormData(form);
+    for (const file of input.files) {
+        if (file.size === 0) {
+            continue;
+        }
 
-    const file = formData.get('avatar');
-    if (!(file instanceof File) || file.size === 0) {
-        form.reset();
-        return;
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        await convertFileIfVideo(formData);
+        switch (getActiveBackgroundTab()) {
+            case BG_SOURCES.GLOBAL:
+                await uploadBackground(formData);
+                break;
+            case BG_SOURCES.CHAT:
+                await uploadChatBackground(formData);
+                break;
+            default:
+                console.error('Unknown background source type');
+                continue;
+        }
     }
 
-    await convertFileIfVideo(formData);
-    await uploadBackground(formData);
-    form.reset();
+    // Allow re-uploading the same file again by clearing the input value
+    input.value = '';
 }
 
 /**
@@ -734,6 +899,50 @@ async function uploadBackground(formData) {
 }
 
 /**
+ * Upload a chat background using a FormData object.
+ * @param {FormData} formData FormData containing the background file
+ * @returns {Promise<void>}
+ */
+async function uploadChatBackground(formData) {
+    try {
+        if (!getCurrentChatId()) {
+            toastr.warning(t`Select a chat to upload a background for it`);
+            return;
+        }
+        if (!formData.has('avatar')) {
+            console.log('No file provided. Chat background upload cancelled.');
+            return;
+        }
+
+        const file = formData.get('avatar');
+        if (!(file instanceof File)) {
+            console.error('Invalid file type for chat background upload');
+            return;
+        }
+
+        const imageDataUri = await getBase64Async(file);
+        const base64Data = imageDataUri.split(',')[1];
+        const extension = getFileExtension(file);
+        const characterName = selected_group
+            ? groups.find(g => g.id === selected_group)?.id?.toString()
+            : characters[this_chid]?.name;
+        const filename = `${characterName}_${humanizedDateTime()}`;
+        const imagePath = await saveBase64AsFile(base64Data, characterName, filename, extension);
+
+        const list = chat_metadata[LIST_METADATA_KEY] || [];
+        list.push(imagePath);
+        chat_metadata[LIST_METADATA_KEY] = list;
+        await saveMetadata();
+        renderChatBackgrounds();
+        highlightNewBackground(imagePath);
+        highlightLockedBackground();
+        highlightSelectedBackground();
+    } catch (error) {
+        console.error('Error uploading chat background:', error);
+    }
+}
+
+/**
  * @param {string} bg
  */
 function highlightNewBackground(bg) {
@@ -748,11 +957,25 @@ function highlightNewBackground(bg) {
  * @param {string} fitting Fitting type
  */
 function setFittingClass(fitting) {
-    const backgrounds = $('#bg1, #bg_custom');
+    const backgrounds = $('#bg1');
     for (const option of ['cover', 'contain', 'stretch', 'center']) {
         backgrounds.toggleClass(option, option === fitting);
     }
     background_settings.fitting = fitting;
+}
+
+function highlightSelectedBackground() {
+    $('.bg_example.selected-background').removeClass('selected-background');
+
+    // The "selected" highlight should always reflect the global background setting.
+    const activeUrl = background_settings.url;
+
+    if (activeUrl) {
+        // Find the thumbnail whose data-url attribute matches the active URL
+        $('.bg_example').filter(function () {
+            return $(this).data('url') === activeUrl;
+        }).addClass('selected-background');
+    }
 }
 
 function onBackgroundFilterInput() {
@@ -766,6 +989,14 @@ function onBackgroundFilterInput() {
 }
 
 const debouncedOnBackgroundFilterInput = debounce(onBackgroundFilterInput, debounce_timeout.standard);
+
+/**
+ * Gets the active background tab source.
+ * @returns {BG_SOURCES} Active background tab source
+ */
+export function getActiveBackgroundTab() {
+    return $('#bg_tabs').tabs('option', 'active');
+}
 
 export function initBackgrounds() {
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
@@ -818,17 +1049,34 @@ export function initBackgrounds() {
         applyThumbnailColumns(background_settings.thumbnailColumns + 1);
     });
     $('#auto_background').on('click', autoBackgroundCommand);
-    $('#add_bg_button').on('change', onBackgroundUploadSelected);
+    $('#add_bg_button').on('change', (e) => onBackgroundUploadSelected(e.originalEvent));
     $('#bg-filter').on('input', () => debouncedOnBackgroundFilterInput());
+    $('#bg-sort').on('change', function () {
+        background_settings.sortOrder = String($(this).val());
+        saveSettingsDebounced();
+        // Re-render both galleries with new sort order
+        renderSystemBackgrounds(cachedSystemBackgrounds);
+        renderChatBackgrounds();
+        highlightSelectedBackground();
+        highlightLockedBackground();
+        // Re-apply any active search filter
+        onBackgroundFilterInput();
+    });
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'lockbg',
-        callback: () => onLockBackgroundClick(new CustomEvent('click')),
+        callback: () => {
+            onLockBackgroundClick();
+            return '';
+        },
         aliases: ['bglock'],
         helpString: 'Locks a background for the currently selected chat',
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'unlockbg',
-        callback: () => onUnlockBackgroundClick(new CustomEvent('click')),
+        callback: () => {
+            onUnlockBackgroundClick();
+            return '';
+        },
         aliases: ['bgunlock'],
         helpString: 'Unlocks a background for the currently selected chat',
     }));
@@ -853,4 +1101,14 @@ export function initBackgrounds() {
         await getBackgrounds();
         await onChatChanged();
     });
+
+    Object.values(BG_TABS).forEach(tabId => {
+        setupScrollToTop({
+            scrollContainerId: tabId,
+            buttonId: 'bg-scroll-top',
+            drawerId: 'Backgrounds',
+        });
+    });
+
+    $('#bg_tabs').tabs();
 }

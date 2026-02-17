@@ -13,7 +13,8 @@
 @import url(css/welcome.css);
 @import url(css/data-maid.css);
 @import url(css/secrets.css);
-@import url(css/world-info.css);
+@import url(css/backgrounds.css);
+@import url(css/chat-backups.css);
 
 :root {
     interpolate-size: allow-keywords;
@@ -146,6 +147,7 @@
 * {
     box-sizing: border-box;
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
     -moz-osx-font-smoothing: grayscale;
     text-shadow: 0px 0px calc(var(--shadowWidth) * 1px) var(--SmartThemeShadowColor);
 }
@@ -309,6 +311,11 @@ table.responsiveTable {
     outline: 1px solid var(--interactable-outline-color);
 }
 
+/* Prevent the outline from being cut off by hiding the overflow */
+.tag.interactable:focus-visible {
+    outline-offset: -1px;
+}
+
 /* The specific input controls can always have a faint outline, even on mouse interaction, to give a better hint */
 select:focus-visible,
 input:focus-visible,
@@ -324,7 +331,7 @@ input[type='checkbox']:focus-visible {
 .dragover {
     filter: brightness(1.1) saturate(1.0);
     outline: 3px dashed var(--SmartThemeBorderColor);
-    animation: pulse 0.5s infinite alternate;
+    animation: pulse var(--animation-duration-3x) infinite alternate;
 }
 
 .dragover.no_animation {
@@ -369,8 +376,9 @@ input[type='checkbox']:focus-visible {
 }
 
 .text_muted {
-    font-size: calc(var(--mainFontSize) - 0.2rem);
-    color: var(--white50a);
+    font-size: calc(var(--mainFontSize) - 0.2em);
+    color: var(--SmartThemeBodyColor);
+    opacity: 0.7;
 }
 
 .mes[is_system="true"][ch_name="SillyTavern System"] .mes_text br {
@@ -402,6 +410,11 @@ input[type='checkbox']:focus-visible {
 .mes_reasoning p {
     margin-top: 0;
     margin-bottom: 10px;
+}
+
+.mes_text p:last-child,
+.mes_reasoning p:last-child {
+    margin-bottom: 0;
 }
 
 .mes_text li tt,
@@ -616,6 +629,14 @@ input[type='checkbox']:focus-visible {
     max-height: var(--doc-height);
 }
 
+.mes_reasoning_details[data-state="thinking"] .mes_reasoning .text_segment,
+.mes_text .text_segment {
+    animation-name: fade-in;
+    animation-timing-function: ease-in-out;
+    /* Not using variables for duration as they are zeroed when reduced motion is enabled */
+    animation-duration: 300ms;
+}
+
 .mes .mes_timer,
 .mes .mesIDDisplay,
 .mes .tokenCounterDisplay {
@@ -642,6 +663,16 @@ input[type='checkbox']:focus-visible {
 }
 
 .mes[is_system="true"] .mes_ghost {
+    display: flex;
+}
+
+.mes .mes_media_gallery,
+.mes .mes_media_list {
+    display: none;
+}
+
+.mes[data-media-display="gallery"] .mes_media_gallery,
+.mes[data-media-display="list"] .mes_media_list {
     display: flex;
 }
 
@@ -1283,6 +1314,14 @@ body .panelControlBar {
     --swipeCounterMargin: 5px;
 }
 
+/* https://stackoverflow.com/a/31819499 */
+/* This has much better performance than .transform on large chats*/
+.slide {
+    animation: slide calc(var(--slide-mes-x-duration, var(--animation-duration, 125ms))) ease-in-out forwards;
+    -webkit-animation: slide calc(var(--slide-mes-x-duration, var(--animation-duration, 125ms))) ease-in-out forwards;
+    will-change: transform;
+}
+
 .swipe_right,
 .swipe_left {
     width: 25px;
@@ -1295,6 +1334,7 @@ body .panelControlBar {
     font-size: 20px;
     cursor: pointer;
     align-self: center;
+    pointer-events: auto;
 }
 
 .swipe_left {
@@ -1307,9 +1347,11 @@ body .panelControlBar {
     position: absolute;
     right: 0;
     bottom: 0;
+    pointer-events: none;
 }
 
 .swipes-counter {
+    opacity: 0.3;
     color: var(--SmartThemeBodyColor);
     font-size: 12px;
     padding: 0 5px;
@@ -1321,16 +1363,14 @@ body .panelControlBar {
     justify-content: center;
     margin-bottom: var(--swipeCounterMargin);
     height: var(--swipeCounterHeight);
+    pointer-events: auto;
 }
 
-body:not(.swipeAllMessages) .mes:not(.last_mes) .swipes-counter {
-    visibility: hidden;
-}
 
 body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     /* Avoid expensive DOM queries */
-    opacity: 0.3 !important;
-    display: flex !important;
+    opacity: 0.3;
+    display: flex;
 }
 
 .swipe_left {
@@ -1341,6 +1381,51 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
 .swipe_right {
     right: 5px;
     align-self: center;
+    display: flex;
+}
+
+/* The last swipe must be highlighted */
+.last_swipe :is(.swipes-counter, .swipe_right) {
+    opacity: 0.7;
+    /* Doubled opacity needs a longer transition to match a non active arrow. */
+    /* (Duration * Active Opacity / Inactive Opacity * 2) */
+    transition-duration: calc(var(--animation-duration-2x) * 0.7/0.3);
+}
+
+.fade :is(.swipes-counter, .swipe_left, .swipe_right){
+    /* Fade in and out: */
+    /* https://nerdy.dev/using-starting-style-and-transition-behavior-for-enter-and-exit-stage-effects */
+    /* https://developer.mozilla.org/en-US/docs/Web/CSS/transition-behavior#description */
+    transition: opacity calc(var(--animation-duration) * 2) ease-in;
+
+    /* Fade in. */
+    @supports (transition-behavior: allow-discrete) {
+        transition:
+            opacity var(--animation-duration-2x) ease-in,
+            display var(--animation-duration-2x) ease-in,
+            visibility var(--animation-duration-2x) ease-in;
+        transition-behavior: allow-discrete;
+    }
+}
+
+/* Hide all but the last message. */
+body:not(.swipeAllMessages) .mes:not(.last_mes) :is(.swipe_left, .swipe_right, .swipes-counter),
+/* Hide non-visible swipe_left. */
+.mes:not(.swipes_visible) .swipe_left,
+/* Only hide swipe_right if it's not visible, and not the last swipe. */
+.mes:not(.swipes_visible, .last_swipe) :is(.swipe_right),
+/* Hide all swipe buttons if .hideAllSwipeButtons. */
+body.hideAllSwipeButtons :is(.swipe_left, .swipe_right),
+.swipes-counter[hidden],
+.swipe_right[hidden],
+.swipe_left[hidden] {
+    /* Fade out */
+    opacity: 0 !important;
+    /* With display:none, the swipes-counter div wil collapse, shifting the chevron. */
+    visibility: hidden;
+    /* Interactivity has limited availability https://caniuse.com/?search=interactivity */
+    interactivity: inert;
+    pointer-events: none;
 }
 
 .ui-settings {
@@ -1448,61 +1533,6 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
     max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
 }
 
-/* --- Quick Character Selection ---  */
-#HotSwapWrapper .hotswap.avatars_inline {
-    display: flex;
-    flex-wrap: wrap;
-    overflow: hidden;
-    justify-content: center;
-    scroll-behavior: smooth;
-    max-height: calc(var(--avatar-base-height) + 2 * var(--avatar-base-border-radius));
-    -ms-overflow-style: none;
-    margin: 5px;
-    margin-right: 10px;
-    transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
-
-    *:focus {
-        outline: none;
-    }
-
-    &::-webkit-scrollbar {
-        display: none;
-    }
-
-    @media screen and (max-width: 1000px) {
-        margin-right: 0;
-        justify-content: flex-start;
-    }
-}
-
-/* when using big avatars, increase the collapsed height */
-body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
-    max-height: calc(var(--avatar-base-width) * var(--big-avatar-width-factor) + 35px)
-}
-
-#HotSwapWrapper:hover .hotswap.avatars_inline {
-    /* you can tweak this 25dvh value as needed! */
-    max-height: 25dvh !important;
-    overflow: auto;
-    transition: all 1s cubic-bezier(0.22, 0.61, 0.36, 1);
-
-    @media screen and (max-width: 1000px) {
-        /* you can tweak this 30dvh value as needed! */
-        max-height: 30dvh !important;
-    }
-}
-
-#HotSwapWrapper:not(:hover) .hotswap.avatars_inline {
-    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Continue with remaining styles */
-.avatars_inline_small .avatar,
-.avatars_inline_small .avatar img {
-    width: calc(var(--avatar-base-width) * var(--inline-avatar-small-factor));
-    height: calc(var(--avatar-base-height) * var(--inline-avatar-small-factor));
-}
-
 .bogus_folder_select .avatar {
     justify-content: center;
     background-color: var(--SmartThemeBlurTintColor);
@@ -1564,6 +1594,10 @@ body.big-avatars #HotSwapWrapper .hotswap.avatars_inline {
 
 .mes_text hr {
     opacity: 0.4;
+}
+
+.mes_text.inline_media:not(:has(.edit_textarea)) {
+    display: none;
 }
 
 br {
@@ -1708,6 +1742,13 @@ button {
             width: 50vw;
         }
 
+        /* Small style variant for macro autocomplete (33vw, max 700px) */
+        &[data-macros-autocomplete-style="small"] .autoComplete {
+            width: 33vw;
+            max-width: 700px;
+            min-width: 250px;
+        }
+
         &:after {
             content: "";
             flex: 1 1 0;
@@ -1758,6 +1799,38 @@ button {
         .autoComplete-details {
             max-height: unset;
             width: 25vw;
+        }
+
+        /* Small style variant for macro autocomplete (33vw, max 700px) */
+        &[data-macros-autocomplete-style="small"] .autoComplete-details {
+            width: 33vw;
+            max-width: 700px;
+            min-width: 250px;
+        }
+
+        &[data-macros-autocomplete-style="small"] {
+            &.left {
+                &:before {
+                    flex: 0 1 calc(var(--targetOffset) * 1px - 33vw);
+                }
+
+                &:after {
+                    flex: 1 0 auto;
+                    max-width: 33vw;
+                }
+            }
+
+            &.right {
+                &:before {
+                    flex: 0 0 calc(var(--targetOffset) * 1px + 33vw);
+                }
+            }
+
+            &.full {
+                .autoComplete-details {
+                    max-width: 33vw;
+                }
+            }
         }
 
         &.left {
@@ -2614,7 +2687,11 @@ textarea::placeholder {
 #creator_notes_spoiler {
     border: 0;
     font-size: calc(var(--mainFontSize)*.8);
-    padding-top: 5px;
+    padding: 5px 0;
+}
+
+#creator_notes_spoiler p:last-child {
+    margin-bottom: 0;
 }
 
 @media screen and (max-width: 1000px) {
@@ -3367,121 +3444,10 @@ input[type=search]:focus::-webkit-search-cancel-button {
 .bg_list {
     display: flex;
     flex-wrap: wrap;
-    width: calc(var(--sheldWidth) - 10px);
+    width: calc(var(--sheldWidth) - 15px);
     max-width: 100vw;
     max-width: 100dvw;
     justify-content: space-evenly;
-}
-
-.bg_example {
-    width: 30%;
-    max-width: 200px;
-    background-repeat: no-repeat;
-    background-size: cover;
-    background-position: center;
-    border-radius: 10px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    box-shadow: 0 0 7px var(--black50a);
-    margin: 5px;
-    cursor: pointer;
-    aspect-ratio: 16/9;
-    justify-content: flex-end;
-    position: relative;
-}
-
-.bg_example.locked {
-    outline: 2px solid var(--golden);
-}
-
-.bg_example:hover.locked .bg_example_lock,
-.bg_example:focus-within.locked .bg_example_lock {
-    display: none;
-}
-
-.bg_example:hover:not(.locked) .bg_example_unlock,
-.bg_example:focus-within:not(.locked) .bg_example_unlock {
-    display: none;
-}
-
-.bg_example:hover[custom="true"] .bg_example_edit,
-.bg_example:focus-within[custom="true"] .bg_example_edit {
-    display: none;
-}
-
-.bg_example:hover[custom="false"] .bg_example_copy,
-.bg_example:focus-within[custom="false"] .bg_example_copy {
-    display: none;
-}
-
-.BGSampleTitle {
-    display: flex;
-    width: 100%;
-    height: min-content;
-    text-align: center;
-    justify-content: center;
-    align-self: flex-end;
-    bottom: 0;
-    position: relative;
-    word-break: break-word;
-    background-color: var(--SmartThemeBlurTintColor);
-    font-size: calc(var(--fontScale) * 0.9em);
-    max-height: 50%;
-    overflow-y: clip;
-    border-radius: 0 0 7px 7px;
-}
-
-.bg_example[custom="true"] .BGSampleTitle {
-    display: none;
-}
-
-.bg_button {
-    padding: 4px;
-    position: absolute;
-    top: 5px;
-    cursor: pointer;
-    opacity: 0.8;
-    border-radius: 3px;
-    font-size: 20px;
-    color: var(--black70a);
-    text-shadow: none;
-    margin: 0;
-    filter: drop-shadow(0px 0px 3px white);
-    transition: opacity var(--animation-duration-2x) ease-in-out;
-    display: none;
-}
-
-.bg_example:hover .bg_button,
-.bg_example:focus-within .bg_button {
-    display: block;
-}
-
-.bg_button:hover {
-    opacity: 1;
-}
-
-.bg_example_cross {
-    right: 6px;
-}
-
-.bg_example_edit {
-    left: 6px;
-}
-
-.bg_example_copy {
-    left: 6px;
-}
-
-.bg_example_lock,
-.bg_example_unlock {
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.add_bg_but {
-    cursor: pointer;
-    opacity: 0.1;
-    height: 100%;
-    width: 100%;
 }
 
 .input-file {
@@ -3523,6 +3489,10 @@ input[type=search]:focus::-webkit-search-cancel-button {
     padding-right: 54px;
     margin-top: 3px;
     position: relative;
+}
+
+#rm_group_top_bar:not(:has(#rm_group_activation_strategy option[value="0"]:checked)) label:has(#rm_group_allow_self_responses) {
+    display: none;
 }
 
 .group_member .queue_position:not(:empty)::before {
@@ -3672,10 +3642,17 @@ grammarly-extension {
     padding: 2px;
 }
 
+.alternate_greeting:first-of-type .move_up_alternate_greeting,
+.alternate_greeting:last-of-type .move_down_alternate_greeting {
+    filter: brightness(75%) grayscale(1);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .alternate_greeting summary {
     list-style-position: outside;
     margin-left: 1em;
-    padding-left: 1em;
+    padding-left: 5px;
 }
 
 .alternate_greeting textarea {
@@ -3906,8 +3883,8 @@ grammarly-extension {
     min-width: calc(1.25em + 12px);
 }
 
-.menu_button:not(.disabled):hover,
-.menu_button:not(.disabled).active {
+.menu_button:not(.disabled):not([disabled]):hover,
+.menu_button:not(.disabled):not([disabled]).active {
     background-color: var(--white30a);
 }
 
@@ -4591,6 +4568,7 @@ input[type="range"]::-webkit-slider-thumb {
 .mes_reasoning_actions {
     margin: 0;
     margin-top: 0.5em;
+    margin-bottom: 0.5em;
 }
 
 .mes_edit_buttons .menu_button,
@@ -4608,7 +4586,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .mes_reasoning_actions .edit_button {
-    margin-bottom: 0.5em;
     opacity: 1;
     filter: brightness(0.7);
 }
@@ -4639,11 +4616,12 @@ input[type="range"]::-webkit-slider-thumb {
     field-sizing: content;
 }
 
-body[data-generating="true"] #send_but,
-body[data-generating="true"] #mes_continue,
-body[data-generating="true"] #mes_impersonate,
-body[data-generating="true"] #chat .last_mes .mes_buttons,
-body[data-generating="true"] #chat .last_mes .mes_reasoning_actions {
+body:is([data-generating="true"], [data-swiping="true"]) :is(
+    #send_but,
+    #mes_continue,
+    #mes_impersonate,
+    #chat .last_mes .mes_buttons,
+    #chat .last_mes .mes_reasoning_actions) {
     display: none;
 }
 
@@ -5161,6 +5139,23 @@ a:hover {
 }
 
 /* Message images/video */
+.mes .mes_media_wrapper:empty {
+    display: none;
+}
+
+.mes .mes_media_wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    padding-right: var(--mes-right-spacing);
+}
+
+.mes_media_wrapper:not(:empty)~.mes_file_wrapper:not(:empty) {
+    margin-top: 0.5em;
+}
+
 .mes .mes_img_container,
 .mes .mes_video_container {
     max-width: 100%;
@@ -5169,7 +5164,8 @@ a:hover {
     position: relative;
     width: fit-content;
     transition: all var(--animation-duration);
-    padding: 0.5rem;
+    border-radius: 5px;
+    overflow: hidden;
 }
 
 .mes .mes_video_container:has(.mes_video[src]) {
@@ -5177,7 +5173,6 @@ a:hover {
 }
 
 .mes_img {
-    border-radius: 5px;
     max-width: 100%;
     max-height: 40vh;
     image-rendering: -webkit-optimize-contrast;
@@ -5194,7 +5189,7 @@ a:hover {
 .mes_img_controls,
 .mes_video_controls {
     position: absolute;
-    top: 0.1em;
+    top: 0;
     left: 0;
     width: 100%;
     display: flex;
@@ -5202,14 +5197,25 @@ a:hover {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-    padding: 1em;
+    padding: 10px;
     z-index: 1;
     transition: opacity var(--animation-duration) ease-in-out;
+    background: linear-gradient(rgba(0, 0, 0, 0.8), transparent);
 }
 
 .mes_img_swipes {
     top: unset;
-    bottom: 0.1rem;
+    bottom: 0;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+}
+
+/* Pass-through pointer events to the swipe buttons only */
+.mes .mes_video_container .mes_img_swipes {
+    pointer-events: none;
+}
+
+.mes .mes_video_container .mes_img_swipes :is(.mes_img_swipe_left, .mes_img_swipe_right) {
+    pointer-events: auto;
 }
 
 .mes_img_swipes .right_menu_button,
@@ -5245,11 +5251,18 @@ a:hover {
 .mes_img_container:focus-within .mes_img_swipes,
 .mes_img_container:hover .mes_img_controls,
 .mes_img_container:focus-within .mes_img_controls,
-.mes_video_container:hover .mes_video_controls {
+.mes_video_container:hover .mes_video_controls,
+.mes_video_container:has(.mes_video.error) .mes_img_swipes,
+.mes_video_container:hover .mes_img_swipes {
     opacity: 1;
 }
 
-.mes .mes_img_container.img_extra {
+.mes_media_container:has(.error) .mes_img_controls,
+.mes_media_container:has(.error) .mes_img_swipes {
+    background: none;
+}
+
+.mes .mes_img_container {
     display: flex;
 }
 
@@ -5257,8 +5270,7 @@ body:not(.caption) .mes_img_caption {
     display: none;
 }
 
-.mes_img_container:not(.img_swipes) .mes_img_swipes,
-body:not(.sd) .mes_img_swipes {
+.mes_img_container:not(.img_swipes) .mes_img_swipes {
     display: none;
 }
 
@@ -5345,7 +5357,6 @@ body:not(.sd) .mes_img_swipes {
 .mes_video {
     max-width: 100%;
     max-height: 400px;
-    border-radius: 5px;
     background: #000;
 }
 
@@ -5506,15 +5517,16 @@ body:has(#character_popup.open) #top-settings-holder:has(.drawer-content.openDra
 
 #p-lb {
     filter: saturate(0.5);
-margin-right: 1em;
-opacity: 0.25;
-transition: 200ms;
+    margin-right: 1em;
+    opacity: 0.25;
+    transition: 200ms;
+    
+    
         &:hover {
     opacity: 1;
     filter: saturate(1.0);
     }
 }
-
 
 .inline-drawer-content {
     display: none;
@@ -5991,7 +6003,8 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 .paginationjs-pages ul li a {
-    padding: 0.05em 0.5em;
+    padding: 0.25em;
+    font-family: 'Font Awesome 6 Free';
     text-decoration: none;
     color: var(--SmartThemeBodyColor);
     border: 1px solid var(--SmartThemeBorderColor);
@@ -6376,4 +6389,27 @@ body:not(.movingUI) .drawer-content.maximized {
 .info-block.error {
     border-color: var(--error-color, #e87f7f);
     background-color: rgba(241, 163, 163, 0.2);
+}
+
+@media (prefers-contrast: more) {
+    :root {
+        --interactable-outline-color: CanvasText;
+        --interactable-outline-color-faint: CanvasText;
+    }
+
+    .interactable:focus-visible,
+    select:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+        outline-width: 2px;
+    }
+
+    .mes {
+        border: 2px solid var(--SmartThemeBorderColor);
+    }
+
+    .menu_button,
+    .popup {
+        border-width: 2px;
+    }
 }

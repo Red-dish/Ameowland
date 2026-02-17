@@ -1,6 +1,7 @@
 import { EventEmitter } from '../lib/eventemitter.js';
 
 export const event_types = {
+    APP_INITIALIZED: 'app_initialized',
     APP_READY: 'app_ready',
     EXTRAS_CONNECTED: 'extras_connected',
     MESSAGE_SWIPED: 'message_swiped',
@@ -12,9 +13,12 @@ export const event_types = {
     MESSAGE_FILE_EMBEDDED: 'message_file_embedded',
     MESSAGE_REASONING_EDITED: 'message_reasoning_edited',
     MESSAGE_REASONING_DELETED: 'message_reasoning_deleted',
+    MESSAGE_SWIPE_DELETED: 'message_swipe_deleted',
     MORE_MESSAGES_LOADED: 'more_messages_loaded',
     IMPERSONATE_READY: 'impersonate_ready',
     CHAT_CHANGED: 'chat_id_changed',
+    // TODO: Naming convention is inconsistent with other events
+    CHAT_LOADED: 'chatLoaded',
     GENERATION_AFTER_COMMANDS: 'GENERATION_AFTER_COMMANDS',
     GENERATION_STARTED: 'generation_started',
     GENERATION_STOPPED: 'generation_stopped',
@@ -36,6 +40,7 @@ export const event_types = {
     OAI_PRESET_IMPORT_READY: 'oai_preset_import_ready',
     WORLDINFO_SETTINGS_UPDATED: 'worldinfo_settings_updated',
     WORLDINFO_UPDATED: 'worldinfo_updated',
+    CHARACTER_EDITOR_OPENED: 'character_editor_opened',
     CHARACTER_EDITED: 'character_edited',
     CHARACTER_PAGE_LOADED: 'character_page_loaded',
     CHARACTER_GROUP_OVERLAY_STATE_CHANGE_BEFORE: 'character_group_overlay_state_change_before',
@@ -85,8 +90,12 @@ export const event_types = {
     SECRET_EDITED: 'secret_edited',
     PRESET_CHANGED: 'preset_changed',
     PRESET_DELETED: 'preset_deleted',
+    PRESET_RENAMED: 'preset_renamed',
+    PRESET_RENAMED_BEFORE: 'preset_renamed_before',
     MAIN_API_CHANGED: 'main_api_changed',
     WORLDINFO_ENTRIES_LOADED: 'worldinfo_entries_loaded',
+    WORLDINFO_SCAN_DONE: 'worldinfo_scan_done',
+    MEDIA_ATTACHMENT_DELETED: 'media_attachment_deleted',
 };
 
-export const eventSource = new EventEmitter([event_types.APP_READY]);
+export const eventSource = new EventEmitter([event_types.APP_READY, event_types.APP_INITIALIZED]);

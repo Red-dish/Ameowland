@@ -28,6 +28,7 @@ import {
 } from '../../extensions.js';
 import { selected_group } from '../../group-chats.js';
 import {
+    clamp,
     debounce,
     deepMerge,
     delay,
@@ -51,14 +52,16 @@ import {
     SlashCommandArgument,
     SlashCommandNamedArgument,
 } from '../../slash-commands/SlashCommandArgument.js';
-import { debounce_timeout, VIDEO_EXTENSIONS } from '../../constants.js';
+import { debounce_timeout, IMAGE_OVERSWIPE, MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTION, VIDEO_EXTENSIONS } from '../../constants.js';
 import { SlashCommandEnumValue } from '../../slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from '../../popup.js';
 import { commonEnumProviders } from '../../slash-commands/SlashCommandCommonEnumsProvider.js';
 import { ToolManager } from '../../tool-calling.js';
-import { MacrosParser } from '../../macros.js';
+import { macros, MacroCategory } from '../../macros/macro-system.js';
 import { t, translate } from '../../i18n.js';
 import { oai_settings } from '../../openai.js';
+import { power_user } from '/scripts/power-user.js';
+import { MacrosParser } from '/scripts/macros.js';
 
 export { MODULE_NAME };
 
@@ -66,12 +69,17 @@ const MODULE_NAME = 'sd';
 // This is a 1x1 transparent PNG
 const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const CUSTOM_STOP_EVENT = 'sd_stop_generation';
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+// Generation tracking for status indicator
+let activeGenerations = 0;
+/** @type {JQuery<HTMLElement>|null} */
+let generationToast = null;
 
 const sources = {
     extras: 'extras',
     horde: 'horde',
     auto: 'auto',
+    sdcpp: 'sdcpp',
     novel: 'novel',
     vlad: 'vlad',
     openai: 'openai',
@@ -82,12 +90,19 @@ const sources = {
     pollinations: 'pollinations',
     stability: 'stability',
     huggingface: 'huggingface',
+    chutes: 'chutes',
     electronhub: 'electronhub',
     nanogpt: 'nanogpt',
     bfl: 'bfl',
     falai: 'falai',
     xai: 'xai',
     google: 'google',
+    zai: 'zai',
+    openrouter: 'openrouter',
+};
+const comfyTypes = {
+    standard: 'standard',
+    runpod_serverless: 'runpod_serverless',
 };
 
 const initiators = {
@@ -269,12 +284,16 @@ const defaultSettings = {
     snap: false,
     free_extend: false,
     function_tool: false,
+    minimal_prompt_processing: false,
 
     prompts: promptTemplates,
 
     // AUTOMATIC1111 settings
     auto_url: 'http://localhost:7860',
     auto_auth: '',
+
+    // stable-diffusion.cpp settings
+    sdcpp_url: 'http://127.0.0.1:1234',
 
     vlad_url: 'http://localhost:7860',
     vlad_auth: '',
@@ -312,13 +331,19 @@ const defaultSettings = {
     // OpenAI settings
     openai_style: 'vivid',
     openai_quality: 'standard',
+    openai_quality_gpt: 'auto',
+    openai_duration: '8',
 
     style: 'Default',
     styles: defaultStyles,
 
     // ComyUI settings
+    comfy_type: 'standard',
+
     comfy_url: 'http://127.0.0.1:8188',
     comfy_workflow: 'Default_Comfy_Workflow.json',
+
+    comfy_runpod_url: '',
 
     // Pollinations settings
     pollinations_enhance: false,
@@ -338,6 +363,7 @@ const defaultSettings = {
     // Google settings
     google_api: 'makersuite',
     google_enhance: true,
+    google_duration: 6,
 };
 
 const writePromptFieldsDebounced = debounce(writePromptFields, debounce_timeout.relaxed);
@@ -411,7 +437,7 @@ function processTriggers(chat, _, abort, type) {
     }
 }
 
-window['SD_ProcessTriggers'] = processTriggers;
+globalThis.SD_ProcessTriggers = processTriggers;
 
 function getSdRequestBody() {
     switch (extension_settings.sd.source) {
@@ -430,6 +456,10 @@ function toggleSourceControls() {
     $('.sd_settings [data-sd-source]').each(function () {
         const source = $(this).data('sd-source').split(',');
         $(this).toggle(source.includes(extension_settings.sd.source));
+    });
+    $('.sd_settings [data-sd-comfy-type]').each(function () {
+        const source = $(this).data('sd-comfy-type').split(',');
+        $(this).toggle(source.includes(extension_settings.sd.comfy_type));
     });
 }
 
@@ -469,6 +499,12 @@ async function loadSettings() {
         extension_settings.sd.styles = defaultStyles;
     }
 
+    // Preserve an original seed if exists
+    if (extension_settings.sd.original_seed >= 0) {
+        extension_settings.sd.seed = extension_settings.sd.original_seed;
+        delete extension_settings.sd.original_seed;
+    }
+
     $('#sd_source').val(extension_settings.sd.source);
     $('#sd_scale').val(extension_settings.sd.scale).trigger('input');
     $('#sd_steps').val(extension_settings.sd.steps).trigger('input');
@@ -497,6 +533,7 @@ async function loadSettings() {
     $('#sd_multimodal_captioning').prop('checked', extension_settings.sd.multimodal_captioning);
     $('#sd_auto_url').val(extension_settings.sd.auto_url);
     $('#sd_auto_auth').val(extension_settings.sd.auto_auth);
+    $('#sd_sdcpp_url').val(extension_settings.sd.sdcpp_url);
     $('#sd_vlad_url').val(extension_settings.sd.vlad_url);
     $('#sd_vlad_auth').val(extension_settings.sd.vlad_auth);
     $('#sd_drawthings_url').val(extension_settings.sd.drawthings_url);
@@ -504,9 +541,14 @@ async function loadSettings() {
     $('#sd_interactive_mode').prop('checked', extension_settings.sd.interactive_mode);
     $('#sd_openai_style').val(extension_settings.sd.openai_style);
     $('#sd_openai_quality').val(extension_settings.sd.openai_quality);
+    $('#sd_openai_quality_gpt').val(extension_settings.sd.openai_quality_gpt);
+    $('#sd_openai_duration').val(extension_settings.sd.openai_duration);
+    $('#sd_comfy_type').val(extension_settings.sd.comfy_type);
     $('#sd_comfy_url').val(extension_settings.sd.comfy_url);
     $('#sd_comfy_prompt').val(extension_settings.sd.comfy_prompt);
+    $('#sd_comfy_runpod_url').val(extension_settings.sd.comfy_runpod_url);
     $('#sd_snap').prop('checked', extension_settings.sd.snap);
+    $('#sd_minimal_prompt_processing').prop('checked', extension_settings.sd.minimal_prompt_processing);
     $('#sd_clip_skip').val(extension_settings.sd.clip_skip);
     $('#sd_clip_skip_value').val(extension_settings.sd.clip_skip);
     $('#sd_seed').val(extension_settings.sd.seed);
@@ -521,6 +563,7 @@ async function loadSettings() {
     $('#sd_bfl_upsampling').prop('checked', extension_settings.sd.bfl_upsampling);
     $('#sd_google_api').val(extension_settings.sd.google_api);
     $('#sd_google_enhance').prop('checked', extension_settings.sd.google_enhance);
+    $('#sd_google_duration').val(extension_settings.sd.google_duration);
 
     for (const style of extension_settings.sd.styles) {
         const option = document.createElement('option');
@@ -628,6 +671,11 @@ function onSnapInput() {
     saveSettingsDebounced();
 }
 
+function onMinimalPromptProcessing() {
+    extension_settings.sd.minimal_prompt_processing = !!$(this).prop('checked');
+    saveSettingsDebounced();
+}
+
 function onStyleSelect() {
     const selectedStyle = String($('#sd_style').find(':selected').val());
     const styleObject = extension_settings.sd.styles.find(x => x.name === selectedStyle);
@@ -680,7 +728,8 @@ async function onDeleteStyleClick() {
 }
 
 async function onSaveStyleClick() {
-    const userInput = await callGenericPopup('Enter style name:', POPUP_TYPE.INPUT);
+    const selectedStyle = extension_settings.sd.style || '';
+    const userInput = await callGenericPopup(t`Enter style name:`, POPUP_TYPE.INPUT, selectedStyle);
 
     if (!userInput) {
         return;
@@ -716,6 +765,48 @@ async function onSaveStyleClick() {
     saveSettingsDebounced();
 }
 
+async function onRenameStyleClick() {
+    const selectedStyle = extension_settings.sd.style;
+    const styleObject = extension_settings.sd.styles.find(x => x.name === selectedStyle);
+
+    if (!styleObject) {
+        return;
+    }
+
+    const newName = await callGenericPopup(t`Enter new style name:`, POPUP_TYPE.INPUT, selectedStyle);
+
+    if (!newName) {
+        return;
+    }
+
+    const name = String(newName).trim();
+
+    if (name === selectedStyle) {
+        return;
+    }
+
+    const existingStyle = extension_settings.sd.styles.find(x => x.name === name);
+
+    if (existingStyle) {
+        toastr.error(t`A style with that name already exists`);
+        return;
+    }
+
+    styleObject.name = name;
+    extension_settings.sd.style = name;
+
+    $('#sd_style').empty();
+    for (const style of extension_settings.sd.styles) {
+        const option = document.createElement('option');
+        option.value = style.name;
+        option.text = style.name;
+        option.selected = style.name === extension_settings.sd.style;
+        $('#sd_style').append(option);
+    }
+
+    saveSettingsDebounced();
+}
+
 /**
  * Modifies prompt based on user inputs.
  * @param {string} prompt Prompt to refine
@@ -725,7 +816,7 @@ async function onSaveStyleClick() {
 async function refinePrompt(prompt, isNegative) {
     if (extension_settings.sd.refine_mode) {
         const text = isNegative ? '<h3>Review and edit the <i>negative</i> prompt:</h3>' : '<h3>Review and edit the prompt:</h3>';
-        const refinedPrompt = await callGenericPopup(text + 'Press "Cancel" to abort the image generation.', POPUP_TYPE.INPUT, prompt.trim(), { rows: 5, okButton: 'Continue' });
+        const refinedPrompt = await callGenericPopup(text + 'Press "Cancel" to abort the image generation.', POPUP_TYPE.INPUT, prompt.trim(), { rows: 8, okButton: 'Continue' });
 
         if (refinedPrompt) {
             return String(refinedPrompt);
@@ -949,6 +1040,13 @@ const resolutionOptions = {
     sd_res_1024x1536: { width: 1024, height: 1536, name: '1024x1536 (2:3, ChatGPT)' },
     sd_res_1024x1792: { width: 1024, height: 1792, name: '1024x1792 (4:7, DALL-E)' },
     sd_res_1792x1024: { width: 1792, height: 1024, name: '1792x1024 (7:4, DALL-E)' },
+    sd_res_1280x1280: { width: 1280, height: 1280, name: '1280x1280 (1:1, Z.AI)' },
+    sd_res_1568x1056: { width: 1568, height: 1056, name: '1568x1056 (3:2, Z.AI)' },
+    sd_res_1056x1568: { width: 1056, height: 1568, name: '1056x1568 (2:3, Z.AI)' },
+    sd_res_1472x1088: { width: 1472, height: 1088, name: '1472x1088 (4:3, Z.AI)' },
+    sd_res_1088x1472: { width: 1088, height: 1472, name: '1088x1472 (3:4, Z.AI)' },
+    sd_res_1728x960: { width: 1728, height: 960, name: '1728x960 (16:9, Z.AI)' },
+    sd_res_960x1728: { width: 960, height: 1728, name: '960x1728 (9:16, Z.AI)' },
 };
 
 function onResolutionChange() {
@@ -1002,6 +1100,11 @@ async function onSourceChange() {
     await loadSettingOptions();
 }
 
+async function onComfyTypeChange() {
+    extension_settings.sd.comfy_type = $('#sd_comfy_type').find(':selected').val();
+    await onSourceChange();
+}
+
 function onFunctionToolInput() {
     extension_settings.sd.function_tool = !!$(this).prop('checked');
     saveSettingsDebounced();
@@ -1015,6 +1118,11 @@ async function onOpenAiStyleSelect() {
 
 async function onOpenAiQualitySelect() {
     extension_settings.sd.openai_quality = String($('#sd_openai_quality').find(':selected').val());
+    saveSettingsDebounced();
+}
+
+async function onOpenAiDurationSelect() {
+    extension_settings.sd.openai_duration = String($('#sd_openai_duration').find(':selected').val());
     saveSettingsDebounced();
 }
 
@@ -1103,6 +1211,11 @@ function onAutoAuthInput() {
     saveSettingsDebounced();
 }
 
+function onSdcppUrlInput() {
+    extension_settings.sd.sdcpp_url = $('#sd_sdcpp_url').val();
+    saveSettingsDebounced();
+}
+
 function onVladUrlInput() {
     extension_settings.sd.vlad_url = $('#sd_vlad_url').val();
     saveSettingsDebounced();
@@ -1147,8 +1260,12 @@ function onHrSecondPassStepsInput() {
 }
 
 function onComfyUrlInput() {
-    // Remove trailing slashes
     extension_settings.sd.comfy_url = String($('#sd_comfy_url').val());
+    saveSettingsDebounced();
+}
+
+function onComfyRunPodUrlInput() {
+    extension_settings.sd.comfy_runpod_url = String($('#sd_comfy_runpod_url').val());
     saveSettingsDebounced();
 }
 
@@ -1204,6 +1321,29 @@ async function validateAutoUrl() {
         toastr.success('SD WebUI API connected.');
     } catch (error) {
         toastr.error(`Could not validate SD WebUI API: ${error.message}`);
+    }
+}
+
+async function validateSdcppUrl() {
+    try {
+        if (!extension_settings.sd.sdcpp_url) {
+            throw new Error('URL is not set.');
+        }
+
+        const result = await fetch('/api/sd/sdcpp/ping', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url: extension_settings.sd.sdcpp_url }),
+        });
+
+        if (!result.ok) {
+            throw new Error('stable-diffusion.cpp server returned an error.');
+        }
+
+        await loadSettingOptions();
+        toastr.success('stable-diffusion.cpp server connected.');
+    } catch (error) {
+        toastr.error(`Could not validate stable-diffusion.cpp server: ${error.message}`);
     }
 }
 
@@ -1277,28 +1417,50 @@ async function validateComfyUrl() {
     }
 }
 
+async function validateComfyRunPodUrl() {
+    try {
+        if (!extension_settings.sd.comfy_runpod_url) {
+            throw new Error('URL is not set.');
+        }
+
+        const result = await fetch('/api/sd/comfyrunpod/ping', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                url: extension_settings.sd.comfy_runpod_url,
+            }),
+        });
+        if (!result.ok) {
+            throw new Error('ComfyUI RunPod returned an error.');
+        }
+
+        await loadSettingOptions();
+        toastr.success('ComfyUI RunPod API connected.');
+    } catch (error) {
+        toastr.error(`Could not validate ComfyUI RunPod API: ${error.message}`);
+    }
+}
+
 async function onModelChange() {
-    extension_settings.sd.model = $('#sd_model').find(':selected').val();
+    const selectedModel = $('#sd_model').find(':selected');
+    extension_settings.sd.model = selectedModel.val();
     saveSettingsDebounced();
 
-    const cloudSources = [
-        sources.horde,
-        sources.novel,
-        sources.openai,
-        sources.aimlapi,
-        sources.togetherai,
-        sources.pollinations,
-        sources.stability,
-        sources.huggingface,
-        sources.electronhub,
-        sources.nanogpt,
-        sources.bfl,
-        sources.falai,
-        sources.xai,
-        sources.google,
+    if (extension_settings.sd.model && extension_settings.sd.source === sources.electronhub) {
+        const cachedModel = selectedModel.data('model');
+        const models = cachedModel ? [cachedModel] : await loadElectronHubModels();
+        ensureElectronHubQualitySelect(models);
+    }
+
+    switchModelSpecificControls(extension_settings.sd.model);
+
+    const updateRemoteModelSources = [
+        sources.auto,
+        sources.vlad,
+        sources.extras,
     ];
 
-    if (cloudSources.includes(extension_settings.sd.source)) {
+    if (!updateRemoteModelSources.includes(extension_settings.sd.source)) {
         return;
     }
 
@@ -1478,6 +1640,9 @@ async function loadSamplers() {
         case sources.auto:
             samplers = await loadAutoSamplers();
             break;
+        case sources.sdcpp:
+            samplers = await loadSdcppSamplers();
+            break;
         case sources.drawthings:
             samplers = await loadDrawthingsSamplers();
             break;
@@ -1508,6 +1673,9 @@ async function loadSamplers() {
         case sources.huggingface:
             samplers = ['N/A'];
             break;
+        case sources.chutes:
+            samplers = ['N/A'];
+            break;
         case sources.electronhub:
             samplers = ['N/A'];
             break;
@@ -1517,10 +1685,19 @@ async function loadSamplers() {
         case sources.bfl:
             samplers = ['N/A'];
             break;
+        case sources.falai:
+            samplers = ['N/A'];
+            break;
         case sources.xai:
             samplers = ['N/A'];
             break;
         case sources.google:
+            samplers = ['N/A'];
+            break;
+        case sources.zai:
+            samplers = ['N/A'];
+            break;
+        case sources.openrouter:
             samplers = ['N/A'];
             break;
     }
@@ -1542,7 +1719,7 @@ async function loadSamplers() {
 async function loadHordeSamplers() {
     const result = await fetch('/api/horde/sd-samplers', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (result.ok) {
@@ -1589,6 +1766,11 @@ async function loadAutoSamplers() {
     } catch (error) {
         return [];
     }
+}
+
+async function loadSdcppSamplers() {
+    // The sdcpp server does not provide an API for samplers, so we return the known list.
+    return ['euler', 'euler_a', 'heun', 'dpm2', 'dpm++2s_a', 'dpm++2m', 'dpm++2mv2', 'ipndm', 'ipndm_v', 'lcm', 'ddim_trailing', 'tcd'];
 }
 
 async function loadDrawthingsSamplers() {
@@ -1642,6 +1824,9 @@ async function loadNovelSamplers() {
 }
 
 async function loadComfySamplers() {
+    if (extension_settings.sd.comfy_type === comfyTypes.runpod_serverless) {
+        return ['N/A'];
+    }
     if (!extension_settings.sd.comfy_url) {
         return [];
     }
@@ -1677,6 +1862,9 @@ async function loadModels() {
         case sources.auto:
             models = await loadAutoModels();
             break;
+        case sources.sdcpp:
+            models = [{ value: '', text: 'N/A' }];
+            break;
         case sources.drawthings:
             models = await loadDrawthingsModels();
             break;
@@ -1707,6 +1895,9 @@ async function loadModels() {
         case sources.huggingface:
             models = [{ value: '', text: t`<Enter Model ID above>` }];
             break;
+        case sources.chutes:
+            models = await loadChutesModels();
+            break;
         case sources.electronhub:
             models = await loadElectronHubModels();
             break;
@@ -1725,19 +1916,93 @@ async function loadModels() {
         case sources.google:
             models = await loadGoogleModels();
             break;
+        case sources.zai:
+            models = await loadZaiModels();
+            break;
+        case sources.openrouter:
+            models = await loadOpenRouterModels();
+            break;
     }
+
+    if (extension_settings.sd.source === sources.electronhub) {
+        ensureElectronHubQualitySelect(models);
+    }
+
+    switchModelSpecificControls(extension_settings.sd.model);
 
     for (const model of models) {
         const option = document.createElement('option');
         option.innerText = model.text;
         option.value = model.value;
         option.selected = model.value === extension_settings.sd.model;
+        $(option).data('model', model);
         $('#sd_model').append(option);
     }
 
     if (!extension_settings.sd.model && models.length > 0) {
         extension_settings.sd.model = models[0].value;
         $('#sd_model').val(extension_settings.sd.model).trigger('change');
+    }
+}
+
+/**
+ * Show or hide model-specific controls based on the selected model.
+ * @param {string} modelId Model ID
+ */
+function switchModelSpecificControls(modelId) {
+    const modelControls = $('.sd_settings [data-sd-model]');
+    modelControls.hide();
+
+    if (!modelId) {
+        return;
+    }
+
+    modelControls.each(function () {
+        const models = String($(this).attr('data-sd-model') || '').split(',').map(m => m.trim());
+        $(this).toggle(models.some(m => modelId.includes(m)));
+    });
+}
+
+/**
+ * Ensure the Electron Hub quality select is populated based on the selected model.
+ * @param {any[]} models Array of models
+ */
+function ensureElectronHubQualitySelect(models) {
+    try {
+        const modelId = String(extension_settings.sd.model || '');
+        if (!modelId) return;
+
+        const model = Array.isArray(models) ? models.find(m => String(m?.id) === modelId) : undefined;
+        const qualities = Array.isArray(model?.qualities) ? model.qualities : undefined;
+
+        const $qualityRow = $('#sd_electronhub_quality_row');
+        const $select = $('#sd_electronhub_quality');
+
+        $qualityRow.toggle(!!qualities && qualities.length > 0);
+        $select.empty();
+
+        if (!qualities || qualities.length === 0) {
+            extension_settings.sd.electronhub_quality = undefined;
+            saveSettingsDebounced();
+            return;
+        }
+
+        for (const q of qualities) {
+            const opt = document.createElement('option');
+            opt.value = String(q);
+            opt.textContent = String(q);
+            opt.selected = String(q) === String(extension_settings.sd.electronhub_quality || '');
+            $select.append(opt);
+        }
+
+        if (!$select.val()) {
+            const first = String(qualities[0]);
+            extension_settings.sd.electronhub_quality = first;
+            $select.val(first);
+            saveSettingsDebounced();
+        }
+    } catch (e) {
+        console.error(e);
     }
 }
 
@@ -1767,7 +2032,7 @@ async function loadFalaiModels() {
 
     const result = await fetch('/api/sd/falai/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (result.ok) {
@@ -1784,9 +2049,11 @@ async function loadXAIModels() {
 }
 
 async function loadPollinationsModels() {
+    $('#sd_pollinations_key').toggleClass('success', !!secret_state[SECRET_KEYS.POLLINATIONS]);
+
     const result = await fetch('/api/sd/pollinations/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (result.ok) {
@@ -1804,13 +2071,34 @@ async function loadTogetherAIModels() {
 
     const result = await fetch('/api/sd/together/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (result.ok) {
         return await result.json();
     }
 
+    return [];
+}
+
+async function loadChutesModels() {
+    if (!secret_state[SECRET_KEYS.CHUTES]) {
+        console.debug('Chutes API key is not set.');
+        return [];
+    }
+
+    const result = await fetch('/api/sd/chutes/models', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+    });
+
+    if (result.ok) {
+        const models = await result.json();
+        console.debug('Loaded Chutes image models:', models);
+        return models;
+    }
+
+    console.warn('Failed to load Chutes models:', result.status);
     return [];
 }
 
@@ -1822,11 +2110,26 @@ async function loadElectronHubModels() {
 
     const result = await fetch('/api/sd/electronhub/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
+    function getModelName(model) {
+        const name = String(model?.name || model?.id || '');
+        const premium = model?.premium_model ? ' | Premium' : '';
+        let price = 'Unknown';
+        if (model?.pricing?.type === 'per_image') {
+            const coeff = Number(model.pricing.coefficient);
+            if (!isNaN(coeff)) {
+                price = `$${coeff}/image`;
+            }
+        }
+        return `${name} | ${price}${premium}`;
+    }
+
     if (result.ok) {
-        return await result.json();
+        /** @type {any[]} */
+        const data = await result.json();
+        return Array.isArray(data) ? data.map(m => ({ ...m, text: getModelName(m) })) : [];
     }
 
     return [];
@@ -1840,7 +2143,7 @@ async function loadNanoGPTModels() {
 
     const result = await fetch('/api/sd/nanogpt/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (result.ok) {
@@ -1853,7 +2156,7 @@ async function loadNanoGPTModels() {
 async function loadHordeModels() {
     const result = await fetch('/api/horde/sd-models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
 
@@ -1974,9 +2277,14 @@ async function loadDrawthingsModels() {
 
 async function loadOpenAiModels() {
     return [
+        { value: 'gpt-image-1.5', text: 'gpt-image-1.5' },
+        { value: 'gpt-image-1-mini', text: 'gpt-image-1-mini' },
         { value: 'gpt-image-1', text: 'gpt-image-1' },
+        { value: 'chatgpt-image-latest', text: 'chatgpt-image-latest' },
         { value: 'dall-e-3', text: 'dall-e-3' },
         { value: 'dall-e-2', text: 'dall-e-2' },
+        { value: 'sora-2', text: 'sora-2' },
+        { value: 'sora-2-pro', text: 'sora-2-pro' },
     ];
 }
 
@@ -1985,7 +2293,7 @@ async function loadAimlapiModels() {
 
     const result = await fetch('/api/sd/aimlapi/models', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
     });
 
     if (!result.ok) {
@@ -2074,6 +2382,9 @@ async function loadNovelModels() {
 
 async function loadGoogleModels() {
     return [
+        'imagen-4.0-generate-001',
+        'imagen-4.0-ultra-generate-001',
+        'imagen-4.0-fast-generate-001',
         'imagen-4.0-generate-preview-06-06',
         'imagen-4.0-fast-generate-preview-06-06',
         'imagen-4.0-ultra-generate-preview-06-06',
@@ -2084,7 +2395,36 @@ async function loadGoogleModels() {
         'imagegeneration@006',
         'imagegeneration@005',
         'imagegeneration@002',
+        'veo-3.1-generate-preview',
+        'veo-3.1-fast-generate-preview',
+        'veo-3.0-generate-001',
+        'veo-3.0-fast-generate-001',
+        'veo-2.0-generate-001',
+        'veo-2.0-generate-exp',
+        'veo-2.0-generate-preview',
     ].map(name => ({ value: name, text: name }));
+}
+
+async function loadZaiModels() {
+    return [
+        { value: 'glm-image', text: 'GLM-Image' },
+        { value: 'cogview-4-250304', text: 'CogView-4' },
+        { value: 'cogvideox-3', text: 'CogVideoX-3' },
+        { value: 'viduq1-text', text: 'Viduq1-Text' },
+    ];
+}
+
+async function loadOpenRouterModels() {
+    const result = await fetch('/api/openrouter/models/image', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+    });
+
+    if (result.ok) {
+        return await result.json();
+    }
+
+    return [];
 }
 
 function loadNovelSchedulers() {
@@ -2092,6 +2432,12 @@ function loadNovelSchedulers() {
 }
 
 async function loadComfyModels() {
+    if (extension_settings.sd.comfy_type === comfyTypes.runpod_serverless) {
+        $('#sd_runpod_key').toggleClass('success', !!secret_state[SECRET_KEYS.COMFY_RUNPOD]);
+        return [
+            { value: '', text: 'N/A' },
+        ];
+    }
     if (!extension_settings.sd.comfy_url) {
         return [];
     }
@@ -2127,6 +2473,9 @@ async function loadSchedulers() {
         case sources.auto:
             schedulers = await getAutoRemoteSchedulers();
             break;
+        case sources.sdcpp:
+            schedulers = await loadSdcppSchedulers();
+            break;
         case sources.novel:
             schedulers = loadNovelSchedulers();
             break;
@@ -2157,6 +2506,9 @@ async function loadSchedulers() {
         case sources.huggingface:
             schedulers = ['N/A'];
             break;
+        case sources.chutes:
+            schedulers = ['N/A'];
+            break;
         case sources.electronhub:
             schedulers = ['N/A'];
             break;
@@ -2173,6 +2525,12 @@ async function loadSchedulers() {
             schedulers = ['N/A'];
             break;
         case sources.google:
+            schedulers = ['N/A'];
+            break;
+        case sources.zai:
+            schedulers = ['N/A'];
+            break;
+        case sources.openrouter:
             schedulers = ['N/A'];
             break;
     }
@@ -2192,6 +2550,9 @@ async function loadSchedulers() {
 }
 
 async function loadComfySchedulers() {
+    if (extension_settings.sd.comfy_type === comfyTypes.runpod_serverless) {
+        return ['N/A'];
+    }
     if (!extension_settings.sd.comfy_url) {
         return [];
     }
@@ -2213,6 +2574,11 @@ async function loadComfySchedulers() {
     }
 }
 
+async function loadSdcppSchedulers() {
+    // The sdcpp server does not provide an API for schedulers, so we return the known list.
+    return ['discrete', 'karras', 'exponential', 'ays', 'gits', 'smoothstep', 'sgm_uniform', 'simple', 'kl_optimal', 'lcm'];
+}
+
 async function loadVaes() {
     $('#sd_vae').empty();
     let vaes = [];
@@ -2226,6 +2592,9 @@ async function loadVaes() {
             break;
         case sources.auto:
             vaes = await loadAutoVaes();
+            break;
+        case sources.sdcpp:
+            vaes = ['N/A'];
             break;
         case sources.novel:
             vaes = ['N/A'];
@@ -2257,6 +2626,9 @@ async function loadVaes() {
         case sources.huggingface:
             vaes = ['N/A'];
             break;
+        case sources.chutes:
+            vaes = ['N/A'];
+            break;
         case sources.electronhub:
             vaes = ['N/A'];
             break;
@@ -2273,6 +2645,12 @@ async function loadVaes() {
             vaes = ['N/A'];
             break;
         case sources.google:
+            vaes = ['N/A'];
+            break;
+        case sources.zai:
+            vaes = ['N/A'];
+            break;
+        case sources.openrouter:
             vaes = ['N/A'];
             break;
     }
@@ -2316,6 +2694,9 @@ async function loadAutoVaes() {
 }
 
 async function loadComfyVaes() {
+    if (extension_settings.sd.comfy_type === comfyTypes.runpod_serverless) {
+        return ['N/A'];
+    }
     if (!extension_settings.sd.comfy_url) {
         return [];
     }
@@ -2338,10 +2719,6 @@ async function loadComfyVaes() {
 }
 
 async function loadComfyWorkflows() {
-    if (!extension_settings.sd.comfy_url) {
-        return;
-    }
-
     try {
         $('#sd_comfy_workflow').empty();
         const result = await fetch('/api/sd/comfy/workflows', {
@@ -2408,13 +2785,22 @@ function processReply(str) {
         return '';
     }
 
+    if (extension_settings.sd.minimal_prompt_processing) {
+        // Minimal prompt processing
+        // JSON and similar should be preserved
+        str = str.normalize('NFD');
+        str = str.replace(/\s+/g, ' '); // Collapse multiple whitespaces into one
+        str = str.trim();
+        return str;
+    }
+
     str = str.replaceAll('"', '');
     str = str.replaceAll('“', '');
     str = str.replaceAll('\n', ', ');
     str = str.normalize('NFD');
 
     // Strip out non-alphanumeric characters barring model syntax exceptions
-    str = str.replace(/[^a-zA-Z0-9.,:_(){}<>[\]\-'|#]+/g, ' ');
+    str = str.replace(/[^a-zA-Z0-9.,:_(){}<>[\]/\-'|#]+/g, ' ');
 
     str = str.replace(/\s+/g, ' '); // Collapse multiple whitespaces into one
     str = str.trim();
@@ -2479,6 +2865,62 @@ function ensureSelectionExists(setting, selector) {
 }
 
 /**
+ * Updates the generation status indicator based on active generation count.
+ * Shows/hides various UI indicators to inform user of background image generation.
+ */
+function updateGenerationIndicator() {
+    if (activeGenerations > 0) {
+        const countText = activeGenerations > 1 ? ` (${activeGenerations})` : '';
+        const toastText = `<i class="fa-solid fa-spinner fa-spin"></i> ${t`Generating image`}${countText}...`;
+
+        // Show persistent toast if not already showing
+        if (!generationToast) {
+            generationToast = toastr.info(
+                toastText,
+                'Image Generation',
+                {
+                    timeOut: 0,
+                    extendedTimeOut: 0,
+                    tapToDismiss: true,
+                    escapeHtml: false,
+                    onHidden: () => {
+                        generationToast = null;
+                    },
+                },
+            );
+        } else if (activeGenerations > 1) {
+            // Update count in existing toast
+            const toastMessage = $(generationToast).find('.toast-message');
+            if (toastMessage.length) {
+                toastMessage.html(toastText);
+            }
+        }
+    } else {
+        // Hide toast when done
+        if (generationToast) {
+            toastr.clear(generationToast);
+            generationToast = null;
+        }
+    }
+}
+
+/**
+ * Increments the active generation counter and updates indicators.
+ */
+function startGenerationTracking() {
+    activeGenerations++;
+    updateGenerationIndicator();
+}
+
+/**
+ * Decrements the active generation counter and updates indicators.
+ */
+function endGenerationTracking() {
+    activeGenerations = Math.max(0, activeGenerations - 1);
+    updateGenerationIndicator();
+}
+
+/**
  * Generates an image based on the given trigger word.
  * @param {string} initiator The initiator of the image generation
  * @param {Record<string, object>} args Command arguments
@@ -2510,7 +2952,7 @@ async function generatePicture(initiator, args, trigger, message, callback) {
     const quietPrompt = getQuietPrompt(generationType, trigger);
     const context = getContext();
 
-    const characterName = context.groupId
+    let characterName = context.groupId
         ? context.groups[Object.keys(context.groups).filter(x => context.groups[x].id === context.groupId)[0]]?.id?.toString()
         : context.characters[context.characterId]?.name;
 
@@ -2530,6 +2972,10 @@ async function generatePicture(initiator, args, trigger, message, callback) {
 
     if (isTrueBoolean(args?.quiet)) {
         callback = () => { };
+    }
+
+    if (isFalseBoolean(args?.gallery)) {
+        characterName = '';
     }
 
     const dimensions = setTypeSpecificDimensions(generationType);
@@ -2552,6 +2998,9 @@ async function generatePicture(initiator, args, trigger, message, callback) {
         await eventSource.emit(event_types.SD_PROMPT_PROCESSING, eventData);
         prompt = eventData.prompt; // Allow extensions to modify the prompt
 
+        // Track this generation for status indicator
+        startGenerationTracking();
+        // Show stop button after prompt is ready (prompt generation uses separate abort mechanism)
         $(stopButton).show();
         eventSource.once(CUSTOM_STOP_EVENT, stopListener);
 
@@ -2562,6 +3011,13 @@ async function generatePicture(initiator, args, trigger, message, callback) {
         // generate the image
         imagePath = await sendGenerationRequest(generationType, prompt, negativePromptPrefix, characterName, callback, initiator, abortController.signal);
     } catch (err) {
+        // Check if this was an intentional abort by user
+        if (abortController.signal.aborted) {
+            console.log('SD: Image generation aborted by user');
+            toastr.info('Image generation stopped.', 'Image Generation');
+            return;
+        }
+
         console.trace(err);
         // errors here are most likely due to text generation failure
         // sendGenerationRequest mostly deals with its own errors
@@ -2569,11 +3025,11 @@ async function generatePicture(initiator, args, trigger, message, callback) {
         const errorText = 'SD prompt text generation failed. ' + reason;
         toastr.error(errorText, 'Image Generation');
         throw new Error(errorText);
-    }
-    finally {
+    } finally {
         $(stopButton).hide();
         restoreOriginalDimensions(dimensions);
         eventSource.removeListener(CUSTOM_STOP_EVENT, stopListener);
+        endGenerationTracking();
     }
 
     return imagePath;
@@ -2747,7 +3203,7 @@ function getCharacterAvatarUrl() {
     if (context.groupId) {
         const groupMembers = context.groups.find(x => x.id === context.groupId)?.members;
         const lastMessageAvatar = context.chat?.filter(x => !x.is_system && !x.is_user)?.slice(-1)[0]?.original_avatar;
-        const randomMemberAvatar = Array.isArray(groupMembers) ? groupMembers[Math.floor(Math.random() * groupMembers.length)]?.avatar : null;
+        const randomMemberAvatar = Array.isArray(groupMembers) ? groupMembers[Math.floor(Math.random() * groupMembers.length)] : null;
         const avatarToUse = lastMessageAvatar || randomMemberAvatar;
         return formatCharacterAvatar(avatarToUse);
     } else {
@@ -2765,8 +3221,10 @@ function getUserAvatarUrl() {
  * @returns {Promise<string>} - A promise that resolves when the prompt generation completes.
  */
 async function generatePrompt(quietPrompt) {
+    const toast = toastr.info('Generating image prompt with an LLM...', 'Image Generation');
     const reply = await generateQuietPrompt({ quietPrompt });
     const processedReply = processReply(reply);
+    toastr.clear(toast);
 
     if (!processedReply) {
         toastr.error('Prompt generation produced no text. Make sure you\'re using a valid instruct template and try again', 'Image Generation');
@@ -2789,10 +3247,16 @@ async function generatePrompt(quietPrompt) {
  */
 async function sendGenerationRequest(generationType, prompt, additionalNegativePrefix, characterName, callback, initiator, signal) {
     const noCharPrefix = [generationMode.FREE, generationMode.BACKGROUND, generationMode.USER, generationMode.USER_MULTIMODAL, generationMode.FREE_EXTENDED];
-    const prefix = noCharPrefix.includes(generationType)
+    const isCharChat = this_chid !== undefined && !selected_group;
+    const ignoreNoCharForSwipe = initiator === initiators.swipe && isCharChat;
+
+    const skipCharPrefix = !ignoreNoCharForSwipe && noCharPrefix.includes(generationType);
+
+    const prefix = skipCharPrefix
         ? extension_settings.sd.prompt_prefix
         : combinePrefixes(extension_settings.sd.prompt_prefix, getCharacterPrefix());
-    const negativePrefix = noCharPrefix.includes(generationType)
+
+    const negativePrefix = skipCharPrefix
         ? extension_settings.sd.negative_prompt
         : combinePrefixes(extension_settings.sd.negative_prompt, getCharacterNegativePrefix());
 
@@ -2819,6 +3283,9 @@ async function sendGenerationRequest(generationType, prompt, additionalNegativeP
             case sources.auto:
                 result = await generateAutoImage(prefixedPrompt, negativePrompt, signal);
                 break;
+            case sources.sdcpp:
+                result = await generateSdcppImage(prefixedPrompt, negativePrompt, signal);
+                break;
             case sources.novel:
                 result = await generateNovelImage(prefixedPrompt, negativePrompt, signal);
                 break;
@@ -2829,7 +3296,16 @@ async function sendGenerationRequest(generationType, prompt, additionalNegativeP
                 result = await generateAimlapiImage(prefixedPrompt, signal);
                 break;
             case sources.comfy:
-                result = await generateComfyImage(prefixedPrompt, negativePrompt, signal);
+                switch (extension_settings.sd.comfy_type) {
+                    case comfyTypes.runpod_serverless:
+                        result = await generateComfyRunPodImage(prefixedPrompt, negativePrompt, signal);
+                        break;
+                    case comfyTypes.standard:
+                        result = await generateComfyImage(prefixedPrompt, negativePrompt, signal);
+                        break;
+                    default:
+                        throw new Error('Unknown comfyUI server type.');
+                }
                 break;
             case sources.togetherai:
                 result = await generateTogetherAIImage(prefixedPrompt, negativePrompt, signal);
@@ -2842,6 +3318,9 @@ async function sendGenerationRequest(generationType, prompt, additionalNegativeP
                 break;
             case sources.huggingface:
                 result = await generateHuggingFaceImage(prefixedPrompt, signal);
+                break;
+            case sources.chutes:
+                result = await generateChutesImage(prefixedPrompt, negativePrompt, signal);
                 break;
             case sources.electronhub:
                 result = await generateElectronHubImage(prefixedPrompt, signal);
@@ -2861,12 +3340,25 @@ async function sendGenerationRequest(generationType, prompt, additionalNegativeP
             case sources.google:
                 result = await generateGoogleImage(prefixedPrompt, negativePrompt, signal);
                 break;
+            case sources.zai:
+                result = await generateZaiImage(prefixedPrompt, signal);
+                break;
+            case sources.openrouter:
+                result = await generateOpenRouterImage(prefixedPrompt, signal);
+                break;
         }
 
         if (!result.data) {
             throw new Error('Endpoint did not return image data.');
         }
     } catch (err) {
+        // Check if this was an intentional abort by user
+        if (signal?.aborted) {
+            console.log('SD: Image generation aborted by user');
+            toastr.info('Image generation stopped.', 'Image Generation');
+            return;
+        }
+
         console.error('Image generation request error: ', err);
         toastr.error('Image generation failed. Please try again.' + '\n\n' + String(err), 'Image Generation');
         return;
@@ -2878,7 +3370,7 @@ async function sendGenerationRequest(generationType, prompt, additionalNegativeP
         return;
     }
 
-    const filename = `${characterName}_${humanizedDateTime()}`;
+    const filename = characterName ? `${characterName}_${humanizedDateTime()}` : humanizedDateTime();
     const base64Image = await saveBase64AsFile(result.data, characterName, filename, result.format);
     callback
         ? await callback(prompt, base64Image, generationType, additionalNegativePrefix, initiator, prefixedPrompt, result.format)
@@ -2942,7 +3434,7 @@ async function generatePollinationsImage(prompt, negativePrompt, signal) {
 
     if (result.ok) {
         const data = await result.json();
-        return { format: 'jpg', data: data?.image };
+        return { format: data?.format, data: data?.image };
     } else {
         const text = await result.text();
         throw new Error(text);
@@ -2998,7 +3490,7 @@ async function generateExtrasImage(prompt, negativePrompt, signal) {
  * Gets an aspect ratio for Stability that is the closest to the given width and height.
  * @param {number} width Target width
  * @param {number} height Target height
- * @param {'google'|'stability'} source Source of the request, used to determine aspect ratio
+ * @param {'google'|'stability'|'zai'} source Source of the request, used to determine aspect ratio
  * @returns {string} Closest aspect ratio as a string
  */
 function getClosestAspectRatio(width, height, source) {
@@ -3023,6 +3515,12 @@ function getClosestAspectRatio(width, height, source) {
                     '9:16': 9 / 16,
                     '4:3': 4 / 3,
                     '3:4': 3 / 4,
+                };
+            case 'zai':
+                return {
+                    '1:1': 1,
+                    '16:9': 16 / 9,
+                    '9:16': 9 / 16,
                 };
             default:
                 console.warn(`Unknown source "${source}" for aspect ratio calculation.`);
@@ -3052,22 +3550,41 @@ function getClosestAspectRatio(width, height, source) {
  * Get closest size for Electron Hub
  * @param {number} width - The width of the image
  * @param {number} height - The height of the image
+ * @param {string[]} sizes - Available sizes
  * @returns {Promise<string>} - The closest size
  */
-async function getClosestSize(width, height) {
-    const response = await fetch('/api/sd/electronhub/sizes', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            model: extension_settings.sd.model,
-        }),
-    });
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text);
+async function getClosestSize(width, height, sizes = []) {
+    const sizesData = [];
+
+    if (Array.isArray(sizes) && sizes.length > 0) {
+        sizesData.push(...sizes);
+    } else if (extension_settings.sd.source === sources.electronhub) {
+        const response = await fetch('/api/sd/electronhub/sizes', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                model: extension_settings.sd.model,
+            }),
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text);
+        }
+        const result = await response.json();
+        sizesData.push(...result.sizes);
+    } else {
+        return null;
     }
-    const result = await response.json();
-    const sizesData = result.sizes;
+
+    const targetWidth = Number(width);
+    const targetHeight = Number(height);
+
+    if (isNaN(targetWidth) || isNaN(targetHeight)) {
+        return null;
+    }
+
+    const targetAspect = targetWidth / targetHeight;
+    const targetResolution = targetWidth * targetHeight;
 
     const closestSize = sizesData.reduce((closest, size) => {
         if (!size || typeof size !== 'string') {
@@ -3080,16 +3597,14 @@ async function getClosestSize(width, height) {
 
         const sizeWidth = Number(sizeParts[0]);
         const sizeHeight = Number(sizeParts[1]);
-        const targetWidth = Number(width);
-        const targetHeight = Number(height);
 
-        if (isNaN(sizeWidth) || isNaN(sizeHeight) || isNaN(targetWidth) || isNaN(targetHeight)) {
+        if (isNaN(sizeWidth) || isNaN(sizeHeight)) {
             return closest;
         }
 
-        const sizeArea = sizeWidth * sizeHeight;
-        const targetArea = targetWidth * targetHeight;
-        const diff = Math.abs(sizeArea - targetArea);
+        const aspectDiff = Math.abs((sizeWidth / sizeHeight) - targetAspect) / targetAspect;
+        const resolutionDiff = Math.abs(sizeWidth * sizeHeight - targetResolution) / targetResolution;
+        const diff = aspectDiff + resolutionDiff;
 
         return diff < closest.diff ? { size, diff } : closest;
     }, { size: null, diff: Infinity });
@@ -3252,6 +3767,55 @@ async function generateAutoImage(prompt, negativePrompt, signal) {
     if (result.ok) {
         const data = await result.json();
         return { format: 'png', data: data.images[0] };
+    } else {
+        const text = await result.text();
+        throw new Error(text);
+    }
+}
+
+/**
+ * Generates an image using stable-diffusion.cpp server API.
+ *
+ * @param {string} prompt - The main instruction used to guide the image generation.
+ * @param {string} negativePrompt - The instruction used to restrict the image generation.
+ * @param {AbortSignal} signal - An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>} - A promise that resolves when the image generation and processing are complete.
+ */
+async function generateSdcppImage(prompt, negativePrompt, signal) {
+    const payload = {
+        url: extension_settings.sd.sdcpp_url,
+        prompt: prompt,
+        negative_prompt: negativePrompt,
+        steps: extension_settings.sd.steps,
+        cfg_scale: extension_settings.sd.scale,
+        width: extension_settings.sd.width,
+        height: extension_settings.sd.height,
+        batch_size: 1,
+        seed: extension_settings.sd.seed >= 0 ? extension_settings.sd.seed : undefined,
+    };
+
+    if (extension_settings.sd.sampler && extension_settings.sd.sampler !== 'N/A') {
+        payload.sampler_name = extension_settings.sd.sampler;
+    }
+
+    if (extension_settings.sd.scheduler && extension_settings.sd.scheduler !== 'N/A') {
+        payload.scheduler = extension_settings.sd.scheduler;
+    }
+
+    if (Number.isFinite(extension_settings.sd.clip_skip)) {
+        payload.clip_skip = extension_settings.sd.clip_skip;
+    }
+
+    const result = await fetch('/api/sd/sdcpp/generate', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        signal: signal,
+        body: JSON.stringify(payload),
+    });
+
+    if (result.ok) {
+        const data = await result.json();
+        return { format: 'png', data: data.images?.[0] };
     } else {
         const text = await result.text();
         throw new Error(text);
@@ -3422,9 +3986,10 @@ async function generateOpenAiImage(prompt, signal) {
     const dalle3PromptLimit = 4000;
     const gptImgPromptLimit = 32000;
 
-    const isDalle2 = extension_settings.sd.model === 'dall-e-2';
-    const isDalle3 = extension_settings.sd.model === 'dall-e-3';
-    const isGptImg = extension_settings.sd.model === 'gpt-image-1';
+    const isDalle2 = /dall-e-2/.test(extension_settings.sd.model);
+    const isDalle3 = /dall-e-3/.test(extension_settings.sd.model);
+    const isGptImg = /gpt-image-(1|latest)/.test(extension_settings.sd.model);
+    const isSora2 = /sora-2/.test(extension_settings.sd.model);
 
     if (isDalle2 && prompt.length > dalle2PromptLimit) {
         prompt = prompt.substring(0, dalle2PromptLimit);
@@ -3463,6 +4028,30 @@ async function generateOpenAiImage(prompt, signal) {
         height = 512;
     }
 
+    if (isSora2) {
+        width = aspectRatio >= 1 ? 1280 : 720;
+        height = aspectRatio >= 1 ? 720 : 1280;
+
+        const videoResult = await fetch('/api/openai/generate-video', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal: signal,
+            body: JSON.stringify({
+                prompt: prompt,
+                model: extension_settings.sd.model,
+                size: `${width}x${height}`,
+                seconds: extension_settings.sd.openai_duration,
+            }),
+        });
+
+        if (!videoResult.ok) {
+            throw new Error(await videoResult.text());
+        }
+
+        const { format, data } = await videoResult.json();
+        return { format, data };
+    }
+
     const result = await fetch('/api/openai/generate-image', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -3472,7 +4061,7 @@ async function generateOpenAiImage(prompt, signal) {
             model: extension_settings.sd.model,
             size: `${width}x${height}`,
             n: 1,
-            quality: isDalle3 ? extension_settings.sd.openai_quality : undefined,
+            quality: isDalle3 ? extension_settings.sd.openai_quality : (isGptImg ? extension_settings.sd.openai_quality_gpt : undefined),
             style: isDalle3 ? extension_settings.sd.openai_style : undefined,
             response_format: isDalle2 || isDalle3 ? 'b64_json' : undefined,
             moderation: isGptImg ? 'low' : undefined,
@@ -3530,25 +4119,17 @@ async function generateAimlapiImage(prompt, signal) {
 }
 
 /**
- * Generates an image in ComfyUI using the provided prompt and configuration settings.
+ * Generates an image in local ComfyUI or serverless runpod using the provided prompt and configuration settings.
  *
  * @param {string} prompt - The main instruction used to guide the image generation.
  * @param {string} negativePrompt - The instruction used to restrict the image generation.
  * @param {AbortSignal} signal - An AbortSignal object that can be used to cancel the request.
+ * @param {string} basePath - ST server endpoint for the service. '/api/sd/comfy' for local, '/api/sd/comfyrunpod' for serverless.
+ * @param {string[]} placeholders - Array of substitutions to apply to the workflow.
+ * @param {string} url - The url of the service to call. Passed to ST server.
  * @returns {Promise<{format: string, data: string}>} - A promise that resolves when the image generation and processing are complete.
  */
-async function generateComfyImage(prompt, negativePrompt, signal) {
-    const placeholders = [
-        'model',
-        'vae',
-        'sampler',
-        'scheduler',
-        'steps',
-        'scale',
-        'width',
-        'height',
-    ];
-
+async function generateComfyImageCommon(prompt, negativePrompt, signal, basePath, placeholders, url) {
     const workflowResponse = await fetch('/api/sd/comfy/workflow', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -3603,12 +4184,12 @@ async function generateComfyImage(prompt, negativePrompt, signal) {
     console.log(`{
         "prompt": ${workflow}
     }`);
-    const promptResult = await fetch('/api/sd/comfy/generate', {
+    const promptResult = await fetch(`${basePath}/generate`, {
         method: 'POST',
         headers: getRequestHeaders(),
         signal: signal,
         body: JSON.stringify({
-            url: extension_settings.sd.comfy_url,
+            url,
             prompt: `{
                 "prompt": ${workflow}
             }`,
@@ -3622,6 +4203,46 @@ async function generateComfyImage(prompt, negativePrompt, signal) {
     return { format, data };
 }
 
+/**
+ * Generates an image in ComfyUI using the provided prompt and configuration settings.
+ *
+ * @param {string} prompt - The main instruction used to guide the image generation.
+ * @param {string} negativePrompt - The instruction used to restrict the image generation.
+ * @param {AbortSignal} signal - An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>} - A promise that resolves when the image generation and processing are complete.
+ */
+async function generateComfyImage(prompt, negativePrompt, signal) {
+    const placeholders = [
+        'model',
+        'vae',
+        'sampler',
+        'scheduler',
+        'steps',
+        'scale',
+        'width',
+        'height',
+    ];
+    return generateComfyImageCommon(prompt, negativePrompt, signal, '/api/sd/comfy', placeholders, extension_settings.sd.comfy_url);
+}
+
+/**
+ * Generates an image using ComfyUI through serverless runpod endpoint using the provided prompt and configuration settings.
+ *
+ * @param {string} prompt - The main instruction used to guide the image generation.
+ * @param {string} negativePrompt - The instruction used to restrict the image generation.
+ * @param {AbortSignal} signal - An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>} - A promise that resolves when the image generation and processing are complete.
+ */
+async function generateComfyRunPodImage(prompt, negativePrompt, signal) {
+    const placeholders = [
+        'steps',
+        'scale',
+        'width',
+        'height',
+    ];
+
+    return generateComfyImageCommon(prompt, negativePrompt, signal, '/api/sd/comfyrunpod', placeholders, extension_settings.sd.comfy_runpod_url);
+}
 
 /**
  * Generates an image in Hugging Face Inference API using the provided prompt and configuration settings (model selected).
@@ -3637,6 +4258,38 @@ async function generateHuggingFaceImage(prompt, signal) {
         body: JSON.stringify({
             model: extension_settings.sd.huggingface_model_id,
             prompt: prompt,
+        }),
+    });
+
+    if (result.ok) {
+        const data = await result.json();
+        return { format: 'jpg', data: data.image };
+    } else {
+        const text = await result.text();
+        throw new Error(text);
+    }
+}
+
+/**
+ * Generates an image using the Chutes API.
+ * @param {string} prompt - The main instruction used to guide the image generation.
+ * @param {string} negativePrompt - The instruction used to restrict the image generation.
+ * @param {AbortSignal} signal - An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>} - A promise that resolves when the image generation and processing are complete.
+ */
+async function generateChutesImage(prompt, negativePrompt, signal) {
+    const result = await fetch('/api/sd/chutes/generate', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        signal: signal,
+        body: JSON.stringify({
+            model: extension_settings.sd.model,
+            prompt: prompt,
+            negative_prompt: negativePrompt,
+            width: extension_settings.sd.width,
+            height: extension_settings.sd.height,
+            steps: extension_settings.sd.steps,
+            guidance_scale: extension_settings.sd.scale,
         }),
     });
 
@@ -3666,6 +4319,7 @@ async function generateElectronHubImage(prompt, signal) {
             model: extension_settings.sd.model,
             prompt: prompt,
             size: size,
+            quality: String(extension_settings.sd.electronhub_quality || '').trim() || undefined,
         }),
     });
 
@@ -3813,6 +4467,38 @@ async function generateFalaiImage(prompt, negativePrompt, signal) {
  * @returns {Promise<{format: string, data: string}>} A promise that resolves when the image generation and processing are complete.
  */
 async function generateGoogleImage(prompt, negativePrompt, signal) {
+    const isVeo = /^veo-/.test(extension_settings.sd.model);
+
+    if (isVeo) {
+        const aspectRatio = extension_settings.sd.width / extension_settings.sd.height;
+        const maxPromptLength = 3000; // 1024 tokens approx.
+        const videoResult = await fetch('/api/google/generate-video', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal: signal,
+            body: JSON.stringify({
+                prompt: prompt.slice(0, maxPromptLength),
+                aspect_ratio: aspectRatio >= 1 ? '16:9' : '9:16',
+                seconds: extension_settings.sd.google_duration,
+                negative_prompt: negativePrompt,
+                model: extension_settings.sd.model,
+                api: extension_settings.sd.google_api || 'makersuite',
+                seed: extension_settings.sd.seed >= 0 ? extension_settings.sd.seed : undefined,
+                vertexai_auth_mode: oai_settings.vertexai_auth_mode,
+                vertexai_region: oai_settings.vertexai_region,
+                vertexai_express_project_id: oai_settings.vertexai_express_project_id,
+            }),
+        });
+
+        if (!videoResult.ok) {
+            const text = await videoResult.text();
+            throw new Error(text);
+        }
+
+        const data = await videoResult.json();
+        return { format: 'mp4', data: data.video };
+    }
+
     const result = await fetch('/api/google/generate-image', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -3838,6 +4524,113 @@ async function generateGoogleImage(prompt, negativePrompt, signal) {
         const text = await result.text();
         throw new Error(text);
     }
+}
+
+/**
+ * Generates an image using the Z.AI API.
+ * @param {string} prompt The main instruction used to guide the image generation.
+ * @param {AbortSignal} signal An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>} A promise that resolves when the image generation and processing are complete.
+ */
+async function generateZaiImage(prompt, signal) {
+    // Video generation models (CogVideoX, Viduq1)
+    if (/(cogvideox|vidu)/.test(extension_settings.sd.model)) {
+        const videoParams = {};
+        if (/cogvideox/.test(extension_settings.sd.model)) {
+            const cogVideoSizes = ['1280x720', '720x1280', '1024x1024', '1080x1920', '2048x1080', '3840x2160'];
+            videoParams.quality = extension_settings.sd.openai_quality === 'hd' ? 'quality' : 'speed';
+            videoParams.size = await getClosestSize(extension_settings.sd.width, extension_settings.sd.height, cogVideoSizes);
+        }
+        if (/vidu/.test(extension_settings.sd.model)) {
+            videoParams.aspect_ratio = getClosestAspectRatio(extension_settings.sd.width, extension_settings.sd.height, 'zai');
+        }
+
+        const videoResult = await fetch('/api/sd/zai/generate-video', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal: signal,
+            body: JSON.stringify({
+                prompt: prompt,
+                model: extension_settings.sd.model,
+                ...videoParams,
+            }),
+        });
+
+        if (videoResult.ok) {
+            const data = await videoResult.json();
+            return { format: data.format, data: data.video };
+        }
+
+        const text = await videoResult.text();
+        throw new Error(text);
+    } else {
+        // Image generation models (GLM-Image, CogView)
+        // GLM-Image requires multiples of 32, CogView requires multiples of 16
+        const isGlmImage = /glm-image/.test(extension_settings.sd.model);
+        const multiple = isGlmImage ? 32 : 16;
+
+        // Round width and height to nearest multiple and clamp to 512-2048 range
+        let width = clamp(Math.round(extension_settings.sd.width / multiple) * multiple, 512, 2048);
+        let height = clamp(Math.round(extension_settings.sd.height / multiple) * multiple, 512, 2048);
+
+        // CogView has a 2^21px pixel count limit, GLM-Image does not
+        if (!isGlmImage) {
+            while ((width * height) > Math.pow(2, 21)) {
+                if (width >= height) {
+                    width -= multiple;
+                } else {
+                    height -= multiple;
+                }
+            }
+        }
+
+        const result = await fetch('/api/sd/zai/generate', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal: signal,
+            body: JSON.stringify({
+                prompt: prompt,
+                model: extension_settings.sd.model,
+                quality: extension_settings.sd.openai_quality,
+                size: `${width}x${height}`,
+            }),
+        });
+
+        if (result.ok) {
+            const data = await result.json();
+            return { format: data.format, data: data.image };
+        }
+
+        const text = await result.text();
+        throw new Error(text);
+    }
+}
+
+/**
+ * Generates an image using the OpenRouter API.
+ * @param {string} prompt The main instruction used to guide the image generation.
+ * @param {AbortSignal} signal An AbortSignal object that can be used to cancel the request.
+ * @returns {Promise<{format: string, data: string}>}
+ */
+async function generateOpenRouterImage(prompt, signal) {
+    const result = await fetch('/api/openrouter/image/generate', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        signal: signal,
+        body: JSON.stringify({
+            model: extension_settings.sd.model,
+            prompt: prompt,
+            aspect_ratio: getClosestAspectRatio(extension_settings.sd.width, extension_settings.sd.height, 'stability'),
+        }),
+    });
+
+    if (result.ok) {
+        const data = await result.json();
+        return { format: 'jpg', data: data.image };
+    }
+
+    const text = await result.text();
+    throw new Error(text);
 }
 
 async function onComfyOpenWorkflowEditorClick() {
@@ -3980,6 +4773,58 @@ async function onComfyDeleteWorkflowClick() {
     onComfyWorkflowChange();
 }
 
+async function onComfyRenameWorkflowClick() {
+    const oldName = extension_settings.sd.comfy_workflow;
+
+    if (!oldName) {
+        return;
+    }
+
+    let newName = await callGenericPopup(t`Enter new workflow name:`, POPUP_TYPE.INPUT, oldName);
+
+    if (!newName) {
+        return;
+    }
+
+    newName = String(newName).trim();
+
+    if (!newName.toLowerCase().endsWith('.json')) {
+        newName += '.json';
+    }
+
+    if (newName === oldName) {
+        return;
+    }
+
+    const existingWorkflow = Array
+        .from(document.querySelectorAll('#sd_comfy_workflow option'))
+        .find(opt => opt instanceof HTMLOptionElement && opt.value === newName);
+
+    if (existingWorkflow) {
+        toastr.warning(t`A workflow with that name already exists`);
+        return;
+    }
+
+    const response = await fetch('/api/sd/comfy/rename-workflow', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            old_name: oldName,
+            new_name: newName,
+        }),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        toastr.error(t`Failed to rename workflow.\n\n${text}`);
+        return;
+    }
+
+    extension_settings.sd.comfy_workflow = newName;
+    saveSettingsDebounced();
+    await loadComfyWorkflows();
+}
+
 /**
  * Sends a chat message with the generated image.
  * @param {string} prompt Prompt used for the image generation
@@ -3995,6 +4840,17 @@ async function sendMessage(prompt, image, generationType, additionalNegativePref
     const name = context.groupId ? systemUserName : context.name2;
     const template = extension_settings.sd.prompts[generationMode.MESSAGE] || '{{prompt}}';
     const messageText = substituteParamsExtended(template, { char: name, prompt: prompt, prefixedPrompt: prefixedPrompt });
+    const mediaType = isVideo(format) ? MEDIA_TYPE.VIDEO : MEDIA_TYPE.IMAGE;
+    /** @type {MediaAttachment} */
+    const mediaAttachment = {
+        url: image,
+        type: mediaType,
+        title: prompt,
+        generation_type: generationType,
+        negative: additionalNegativePrefix,
+        source: MEDIA_SOURCE.GENERATED,
+    };
+    /** @type {ChatMessage} */
     const message = {
         name: name,
         is_user: false,
@@ -4002,26 +4858,19 @@ async function sendMessage(prompt, image, generationType, additionalNegativePref
         send_date: getMessageTimeStamp(),
         mes: messageText,
         extra: {
-            image: image,
-            title: prompt,
-            generationType: generationType,
-            negative: additionalNegativePrefix,
+            media: [mediaAttachment],
+            media_display: MEDIA_DISPLAY.GALLERY,
+            media_index: 0,
             inline_image: false,
-            image_swipes: [image],
         },
     };
-    if (isVideo(format)) {
-        message.extra.video = image;
-        delete message.extra.image;
-        delete message.extra.image_swipes;
-        delete message.extra.inline_image;
-    }
     context.chat.push(message);
     const messageId = context.chat.length - 1;
     await eventSource.emit(event_types.MESSAGE_RECEIVED, messageId, 'extension');
     context.addOneMessage(message);
     await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, messageId, 'extension');
     await context.saveChat();
+    setTimeout(() => context.scrollOnMediaLoad(), debounce_timeout.short);
 }
 
 /**
@@ -4059,7 +4908,7 @@ async function addSDGenButtons() {
         placement: 'top',
     });
 
-    $(document).on('click', '.sd_message_gen', sdMessageButton);
+    $(document).on('click', '.sd_message_gen', (e) => sdMessageButton($(e.currentTarget), { animate: false }));
 
     $(document).on('click touchend', function (e) {
         const target = $(e.target);
@@ -4108,6 +4957,8 @@ function isValidState() {
             return true;
         case sources.auto:
             return !!extension_settings.sd.auto_url;
+        case sources.sdcpp:
+            return !!extension_settings.sd.sdcpp_url;
         case sources.drawthings:
             return !!extension_settings.sd.drawthings_url;
         case sources.vlad:
@@ -4119,15 +4970,25 @@ function isValidState() {
         case sources.aimlapi:
             return secret_state[SECRET_KEYS.AIMLAPI];
         case sources.comfy:
-            return true;
+            switch (extension_settings.sd.comfy_type) {
+                case comfyTypes.runpod_serverless:
+                    return !!extension_settings.sd.comfy_runpod_url &&
+                        secret_state[SECRET_KEYS.COMFY_RUNPOD];
+                case comfyTypes.standard:
+                    return !!extension_settings.sd.comfy_url;
+                default:
+                    return false;
+            }
         case sources.togetherai:
             return secret_state[SECRET_KEYS.TOGETHERAI];
         case sources.pollinations:
-            return true;
+            return secret_state[SECRET_KEYS.POLLINATIONS];
         case sources.stability:
             return secret_state[SECRET_KEYS.STABILITY];
         case sources.huggingface:
             return secret_state[SECRET_KEYS.HUGGINGFACE];
+        case sources.chutes:
+            return secret_state[SECRET_KEYS.CHUTES];
         case sources.electronhub:
             return secret_state[SECRET_KEYS.ELECTRONHUB];
         case sources.nanogpt:
@@ -4140,103 +5001,114 @@ function isValidState() {
             return secret_state[SECRET_KEYS.XAI];
         case sources.google:
             return secret_state[SECRET_KEYS.MAKERSUITE] || secret_state[SECRET_KEYS.VERTEXAI] || secret_state[SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT];
+        case sources.zai:
+            return secret_state[SECRET_KEYS.ZAI];
+        case sources.openrouter:
+            return secret_state[SECRET_KEYS.OPENROUTER];
+        default:
+            return false;
     }
 }
 
-let buttonAbortController = null;
+/** @type {WeakMap<HTMLElement, AbortController>} */
+const buttonAbortControllers = new WeakMap();
 
-async function sdMessageButton(e) {
+/**
+ * "Paintbrush" button handler to generate a new image for a message.
+ * @param {JQuery<HTMLElement>} $icon The click target.
+ * @param {Object} [options] Additional options for image generation.
+ * @param {boolean} [options.animate] Whether to animate the media during generation.
+ * @returns {Promise<void>} A promise that resolves when the image generation process is complete.
+ */
+async function sdMessageButton($icon, { animate } = {}) {
+    /**
+     * Sets the icon to indicate busy or idle state.
+     * @param {boolean} isBusy Whether the icon should indicate a busy state.
+     */
     function setBusyIcon(isBusy) {
-        $icon.toggleClass('fa-paintbrush', !isBusy);
-        $icon.toggleClass(busyClass, isBusy);
+        $icon.toggleClass(classes.idle, !isBusy);
+        $icon.toggleClass(classes.busy, isBusy);
+        $media.toggleClass(classes.animation, isBusy);
+
+        // Update generation counter toast
+        const trackingFunction = isBusy ? startGenerationTracking : endGenerationTracking;
+        trackingFunction();
     }
 
-    const busyClass = 'fa-hourglass';
-    const context = getContext();
-    const $icon = $(e.currentTarget);
-    const $mes = $icon.closest('.mes');
-    const message_id = $mes.attr('mesid');
-    const message = context.chat[message_id];
-    const characterFileName = context.groupId
-        ? context.groups[Object.keys(context.groups).filter(x => context.groups[x].id === context.groupId)[0]]?.id?.toString()
-        : context.characters[context.characterId]?.name;
-    const messageText = message?.mes;
-    const hasSavedImage = message?.extra?.image && message?.extra?.title;
-    const hasSavedNegative = message?.extra?.negative;
+    let $media = jQuery();
 
-    if ($icon.hasClass(busyClass)) {
-        buttonAbortController?.abort('Aborted by user');
-        console.log('Previous image is still being generated...');
+    const classes = { busy: 'fa-hourglass', idle: 'fa-paintbrush', animation: 'fa-fade' };
+    const context = getContext();
+    const abortController = (() => {
+        const nativeElement = $icon.get(0);
+        if (buttonAbortControllers.has(nativeElement)) {
+            return buttonAbortControllers.get(nativeElement);
+        } else {
+            const controller = new AbortController();
+            buttonAbortControllers.set(nativeElement, controller);
+            return controller;
+        }
+    })();
+
+    if ($icon.hasClass(classes.busy)) {
+        abortController.abort('Aborted by user');
+        console.log('SD: Image generation aborted by user');
         return;
     }
 
-    let dimensions = null;
-    buttonAbortController = new AbortController();
+    const messageElement = $icon.closest('.mes');
+    const messageId = Number(messageElement.attr('mesid'));
 
-    try {
-        setBusyIcon(true);
-        if (hasSavedImage) {
-            const prompt = await refinePrompt(message.extra.title, false);
-            const negative = hasSavedNegative ? await refinePrompt(message.extra.negative, true) : '';
-            message.extra.title = prompt;
+    /** @type {ChatMessage} */
+    const message = context.chat[messageId];
 
-            const generationType = message?.extra?.generationType ?? generationMode.FREE;
-            console.log('Regenerating an image, using existing prompt:', prompt);
-            dimensions = setTypeSpecificDimensions(generationType);
-            await sendGenerationRequest(generationType, prompt, negative, characterFileName, saveGeneratedImage, initiators.action, buttonAbortController?.signal);
-        }
-        else {
-            console.log('doing /sd raw last');
-            await generatePicture(initiators.action, {}, 'raw_last', messageText, saveGeneratedImage);
-        }
-    }
-    catch (error) {
-        console.error('Could not generate inline image: ', error);
-    }
-    finally {
-        setBusyIcon(false);
-
-        if (dimensions) {
-            restoreOriginalDimensions(dimensions);
-        }
+    if (!message) {
+        console.error('Could not find message for SD generation button');
+        return;
     }
 
-    function saveGeneratedImage(prompt, image, generationType, negative, _initiator, _prefixedPrompt, format) {
-        // Some message sources may not create the extra object
-        if (typeof message.extra !== 'object' || message.extra === null) {
-            message.extra = {};
-        }
-
-        // Add image to the swipe list if it's not already there
-        if (!Array.isArray(message.extra.image_swipes)) {
-            message.extra.image_swipes = [];
-        }
-
-        const swipes = message.extra.image_swipes;
-
-        if (message.extra.image && !swipes.includes(message.extra.image)) {
-            swipes.push(message.extra.image);
-        }
-
-        const isVideoFormat = isVideo(format);
-
-        if (isVideoFormat) {
-            message.extra.video = image;
-        } else {
-            swipes.push(image);
-
-            // If already contains an image and it's not inline - leave it as is
-            message.extra.inline_image = !(message.extra.image && !message.extra.inline_image);
-            message.extra.image = image;
-        }
-
-        message.extra.title = prompt;
-        message.extra.generationType = generationType;
-        message.extra.negative = negative;
-        appendMediaToMessage(message, $mes);
-
-        return context.saveChat();
+    if (!message.extra || typeof message.extra !== 'object') {
+        message.extra = {};
     }
+
+    if (!Array.isArray(message.extra.media)) {
+        message.extra.media = [];
+    }
+
+    if (!message.extra.media.length && !message.extra.media_display) {
+        message.extra.media_display = MEDIA_DISPLAY.GALLERY;
+    }
+
+    /** @type {MediaAttachment} */
+    const selectedMedia = message.extra.media.length > 0
+        ? (message.extra.media[message.extra.media_index] ?? message.extra.media[message.extra.media.length - 1])
+        : { url: '', title: message.mes, type: MEDIA_TYPE.IMAGE, generation_type: generationMode.FREE };
+
+    if (animate && message.extra.media.length > 0) {
+        const index = message.extra.media.indexOf(selectedMedia);
+        $media = messageElement.find(`.mes_media_container[data-index="${index}"]`).find('.mes_img, .mes_video');
+    }
+
+    const newMediaAttachment = await generateMediaSwipe(
+        selectedMedia,
+        message,
+        () => setBusyIcon(true),
+        () => setBusyIcon(false),
+        abortController,
+    );
+
+    if (!newMediaAttachment) {
+        return;
+    }
+
+    // If already contains an image and it's not inline - leave it as is
+    message.extra.inline_image = !(message.extra.media.length && !message.extra.inline_image);
+    message.extra.media.push(newMediaAttachment);
+    message.extra.media_index = message.extra.media.length - 1;
+
+    appendMediaToMessage(message, messageElement, SCROLL_BEHAVIOR.KEEP);
+
+    await context.saveChat();
 }
 
 async function onCharacterPromptShareInput() {
@@ -4266,97 +5138,103 @@ async function writePromptFields(characterId) {
 }
 
 /**
- * Switches an image to the next or previous one in the swipe list.
- * @param {object} args Event arguments
- * @param {any} args.message Message object
- * @param {JQuery<HTMLElement>} args.element Message element
- * @param {string} args.direction Swipe direction
- * @returns {Promise<void>}
+ * Generates a new media attachment based on the provided media attachment metadata.
+ * @param {MediaAttachment} mediaAttachment - The media attachment metadata.
+ * @param {ChatMessage} message - The chat message containing the media attachment.
+ * @param {Function} onStart - Callback function to be called when generation starts.
+ * @param {Function} onComplete - Callback function to be called when generation completes.
+ * @param {AbortController} abortController - An AbortController to handle cancellation of the generation process.
+ * @returns {Promise<MediaAttachment|null>} - A promise that resolves to the newly generated media attachment, or null if generation failed or was aborted.
+ */
+async function generateMediaSwipe(mediaAttachment, message, onStart, onComplete, abortController = new AbortController()) {
+    const stopButton = document.getElementById('sd_stop_gen');
+    const stopListener = () => abortController.abort('Aborted by user');
+    const generationType = mediaAttachment.generation_type ?? message?.extra?.generationType ?? generationMode.FREE;
+    const dimensions = setTypeSpecificDimensions(generationType);
+    extension_settings.sd.original_seed = extension_settings.sd.seed;
+    extension_settings.sd.seed = extension_settings.sd.seed >= 0 ? Math.round(Math.random() * (Math.pow(2, 32) - 1)) : -1;
+
+    /** @type {MediaAttachment} */
+    const result = {
+        url: '',
+        type: MEDIA_TYPE.IMAGE,
+        source: MEDIA_SOURCE.GENERATED,
+    };
+
+    try {
+        $(stopButton).show();
+        eventSource.once(CUSTOM_STOP_EVENT, stopListener);
+        const callback = (_a, _b, _c, _d, _e, _f, format) => { result.type = isVideo(format) ? MEDIA_TYPE.VIDEO : MEDIA_TYPE.IMAGE; };
+        const savedPrompt = mediaAttachment.title ?? message.extra.title ?? '';
+        const prompt = await refinePrompt(savedPrompt, false);
+        const savedNegative = mediaAttachment.negative ?? message.extra.negative ?? '';
+        const negative = savedNegative ? await refinePrompt(savedNegative, true) : '';
+
+        const context = getContext();
+        const characterName = context.groupId
+            ? context.groups[Object.keys(context.groups).filter(x => context.groups[x].id === context.groupId)[0]]?.id?.toString()
+            : context.characters[context.characterId]?.name;
+
+        onStart();
+        result.url = await sendGenerationRequest(generationType, prompt, negative, characterName, callback, initiators.swipe, abortController.signal);
+        result.generation_type = generationType;
+        result.title = prompt;
+        result.negative = negative;
+    } finally {
+        onComplete();
+        $(stopButton).hide();
+        eventSource.removeListener(CUSTOM_STOP_EVENT, stopListener);
+        restoreOriginalDimensions(dimensions);
+        extension_settings.sd.seed = extension_settings.sd.original_seed;
+        delete extension_settings.sd.original_seed;
+    }
+
+    if (!result.url) {
+        return null;
+    }
+
+    return result;
+}
+
+/**
+ * Handles the image swipe event to potentially generate a new image.
+ * @param {object} param Parameters object
+ * @param {ChatMessage} param.message Message object
+ * @param {JQuery<HTMLElement>} param.element Message element
+ * @param {string} param.direction Swipe direction
  */
 async function onImageSwiped({ message, element, direction }) {
-    const context = getContext();
-    const animationClass = 'fa-fade';
-    const messageImg = element.find('.mes_img');
+    const { powerUserSettings, accountStorage } = getContext();
 
-    // Current image is already animating
-    if (messageImg.hasClass(animationClass)) {
+    if (!isValidState()) {
         return;
     }
 
-    const swipes = message?.extra?.image_swipes;
-
-    if (!Array.isArray(swipes)) {
-        console.warn('No image swipes found in the message');
+    if (!message || direction !== SWIPE_DIRECTION.RIGHT || powerUserSettings.image_overswipe !== IMAGE_OVERSWIPE.GENERATE) {
         return;
     }
 
-    const currentIndex = swipes.indexOf(message.extra.image);
-
-    if (currentIndex === -1) {
-        console.warn('Current image not found in the swipes');
+    const media = message?.extra?.media;
+    if (!Array.isArray(media) || media.length === 0) {
         return;
     }
 
-    // Switch to previous image or wrap around if at the beginning
-    if (direction === 'left') {
-        const newIndex = currentIndex === 0 ? swipes.length - 1 : currentIndex - 1;
-        message.extra.image = swipes[newIndex];
-
-        // Update the image in the message
-        appendMediaToMessage(message, element, false);
+    const shouldGenerate = message?.extra?.media_index === media.length - 1;
+    if (!shouldGenerate) {
+        return;
     }
 
-    // Switch to next image or generate a new one if at the end
-    if (direction === 'right') {
-        const newIndex = currentIndex === swipes.length - 1 ? swipes.length : currentIndex + 1;
-
-        if (newIndex === swipes.length) {
-            const abortController = new AbortController();
-            const swipeControls = element.find('.mes_img_swipes');
-            const stopButton = document.getElementById('sd_stop_gen');
-            const stopListener = () => abortController.abort('Aborted by user');
-            const generationType = message?.extra?.generationType ?? generationMode.FREE;
-            const dimensions = setTypeSpecificDimensions(generationType);
-            const originalSeed = extension_settings.sd.seed;
-            extension_settings.sd.seed = extension_settings.sd.seed >= 0 ? Math.round(Math.random() * (Math.pow(2, 32) - 1)) : -1;
-            let imagePath = '';
-
-            try {
-                $(stopButton).show();
-                eventSource.once(CUSTOM_STOP_EVENT, stopListener);
-                const callback = () => { };
-                const hasNegative = message.extra.negative;
-                const prompt = await refinePrompt(message.extra.title, false);
-                const negativePromptPrefix = hasNegative ? await refinePrompt(message.extra.negative, true) : '';
-                message.extra.title = prompt;
-                const characterName = context.groupId
-                    ? context.groups[Object.keys(context.groups).filter(x => context.groups[x].id === context.groupId)[0]]?.id?.toString()
-                    : context.characters[context.characterId]?.name;
-
-                messageImg.addClass(animationClass);
-                swipeControls.hide();
-                imagePath = await sendGenerationRequest(generationType, prompt, negativePromptPrefix, characterName, callback, initiators.swipe, abortController.signal);
-            } finally {
-                $(stopButton).hide();
-                messageImg.removeClass(animationClass);
-                swipeControls.show();
-                eventSource.removeListener(CUSTOM_STOP_EVENT, stopListener);
-                restoreOriginalDimensions(dimensions);
-                extension_settings.sd.seed = originalSeed;
-            }
-
-            if (!imagePath) {
-                return;
-            }
-
-            swipes.push(imagePath);
-        }
-
-        message.extra.image = swipes[newIndex];
-        appendMediaToMessage(message, element, false);
+    const key = 'imageSwipeNoticeShown';
+    const hasSeenNotice = accountStorage.getItem(key);
+    if (!hasSeenNotice) {
+        await Popup.show.text(
+            t`Image Generation Notice`,
+            t`To disable generation on image swipes, change the "Image Swipe Behavior" setting in the User Settings panel. This message will not be shown again.`,
+        );
+        accountStorage.setItem(key, 'true');
     }
 
-    await context.saveChat();
+    await sdMessageButton(element.find('.sd_message_gen'), { animate: true });
 }
 
 /**
@@ -4389,6 +5267,17 @@ function applyCommandArguments(args) {
         'denoise': 'denoising_strength',
         '2ndpass': 'hr_second_pass_steps',
         'faces': 'restore_faces',
+        'processing': 'minimal_prompt_processing',
+    };
+    const enumHandlers = {
+        'processing': (value) => {
+            if (/standard/gi.test(String(value))) {
+                return false;
+            }
+            if (/minimal/gi.test(String(value))) {
+                return true;
+            }
+        },
     };
 
     for (const [param, setting] of Object.entries(settingMap)) {
@@ -4397,6 +5286,14 @@ function applyCommandArguments(args) {
         }
         currentSettings[setting] = extension_settings.sd[setting];
         const value = String(args[param]);
+        const enumHandler = enumHandlers[param];
+        if (typeof enumHandler === 'function') {
+            const enumValue = enumHandler(value);
+            if (enumValue !== undefined) {
+                overrideSettings[setting] = enumValue;
+            }
+            continue;
+        }
         const type = typeof defaultSettings[setting];
         switch (type) {
             case 'boolean':
@@ -4479,6 +5376,9 @@ jQuery(async () => {
             new SlashCommandNamedArgument(
                 'quiet', 'whether to post the generated image to chat', [ARGUMENT_TYPE.BOOLEAN], false, false, 'false',
             ),
+            new SlashCommandNamedArgument(
+                'gallery', 'whether to save the generated image to the character gallery', [ARGUMENT_TYPE.BOOLEAN], false, false, 'true',
+            ),
             SlashCommandNamedArgument.fromProps({
                 name: 'negative',
                 description: 'negative prompt prefix',
@@ -4515,6 +5415,17 @@ jQuery(async () => {
                 description: 'snap auto-adjusted dimensions to the nearest known resolution (portraits and backgrounds only)',
                 typeList: [ARGUMENT_TYPE.BOOLEAN],
                 enumProvider: commonEnumProviders.boolean('trueFalse'),
+                isRequired: false,
+                acceptsMultiple: false,
+            }),
+            SlashCommandNamedArgument.fromProps({
+                name: 'processing',
+                description: 'level of response prompt processing returned by the LLM',
+                typeList: [ARGUMENT_TYPE.STRING],
+                enumList: [
+                    new SlashCommandEnumValue('standard', 'Standard prompt processing'),
+                    new SlashCommandEnumValue('minimal', 'Minimal prompt processing'),
+                ],
                 isRequired: false,
                 acceptsMultiple: false,
             }),
@@ -4650,7 +5561,7 @@ jQuery(async () => {
         ],
         helpString: `
             <div>
-                Requests to generate an image and posts it to chat (unless <code>quiet=true</code> argument is specified).
+                Requests to generate an image and posts it to chat (unless <code>quiet=true</code> argument is specified). The image is saved to the character gallery by default; use <code>gallery=false</code> to save to the root of the user images directory.
             </div>
             <div>
                 Supported arguments: <code>${Object.values(triggerWords).flat().join(', ')}</code>.
@@ -4763,6 +5674,8 @@ jQuery(async () => {
     $('#sd_auto_validate').on('click', validateAutoUrl);
     $('#sd_auto_url').on('input', onAutoUrlInput);
     $('#sd_auto_auth').on('input', onAutoAuthInput);
+    $('#sd_sdcpp_validate').on('click', validateSdcppUrl);
+    $('#sd_sdcpp_url').on('input', onSdcppUrlInput);
     $('#sd_drawthings_validate').on('click', validateDrawthingsUrl);
     $('#sd_drawthings_url').on('input', onDrawthingsUrlInput);
     $('#sd_drawthings_auth').on('input', onDrawthingsAuthInput);
@@ -4780,21 +5693,28 @@ jQuery(async () => {
     $('#sd_novel_decrisper').on('input', onNovelDecrisperInput);
     $('#sd_novel_variety_boost').on('input', onNovelVarietyBoostInput);
     $('#sd_pollinations_enhance').on('input', onPollinationsEnhanceInput);
+    $('#sd_comfy_type').on('change', onComfyTypeChange);
     $('#sd_comfy_validate').on('click', validateComfyUrl);
+    $('#sd_comfy_runpod_validate').on('click', validateComfyRunPodUrl);
     $('#sd_comfy_url').on('input', onComfyUrlInput);
+    $('#sd_comfy_runpod_url').on('input', onComfyRunPodUrlInput);
     $('#sd_comfy_workflow').on('change', onComfyWorkflowChange);
     $('#sd_comfy_open_workflow_editor').on('click', onComfyOpenWorkflowEditorClick);
     $('#sd_comfy_new_workflow').on('click', onComfyNewWorkflowClick);
+    $('#sd_comfy_rename_workflow').on('click', onComfyRenameWorkflowClick);
     $('#sd_comfy_delete_workflow').on('click', onComfyDeleteWorkflowClick);
     $('#sd_style').on('change', onStyleSelect);
     $('#sd_save_style').on('click', onSaveStyleClick);
+    $('#sd_rename_style').on('click', onRenameStyleClick);
     $('#sd_delete_style').on('click', onDeleteStyleClick);
     $('#sd_character_prompt_block').hide();
     $('#sd_interactive_mode').on('input', onInteractiveModeInput);
     $('#sd_openai_style').on('change', onOpenAiStyleSelect);
     $('#sd_openai_quality').on('change', onOpenAiQualitySelect);
+    $('#sd_openai_duration').on('input', onOpenAiDurationSelect);
     $('#sd_multimodal_captioning').on('input', onMultimodalCaptioningInput);
     $('#sd_snap').on('input', onSnapInput);
+    $('#sd_minimal_prompt_processing').on('input', onMinimalPromptProcessing);
     $('#sd_clip_skip').on('input', onClipSkipInput);
     $('#sd_seed').on('input', onSeedInput);
     $('#sd_character_prompt_share').on('input', onCharacterPromptShareInput);
@@ -4815,6 +5735,18 @@ jQuery(async () => {
     });
     $('#sd_google_enhance').on('input', function () {
         extension_settings.sd.google_enhance = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    $('#sd_google_duration').on('input', function () {
+        extension_settings.sd.google_duration = Number($(this).val());
+        saveSettingsDebounced();
+    });
+    $('#sd_electronhub_quality').on('change', function () {
+        extension_settings.sd.electronhub_quality = String($(this).val());
+        saveSettingsDebounced();
+    });
+    $('#sd_openai_quality_gpt').on('input', function () {
+        extension_settings.sd.openai_quality_gpt = String($(this).val());
         saveSettingsDebounced();
     });
 
@@ -4840,20 +5772,24 @@ jQuery(async () => {
         }
     });
 
-    eventSource.on(event_types.IMAGE_SWIPED, onImageSwiped);
-
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
+    eventSource.on(event_types.IMAGE_SWIPED, onImageSwiped);
 
     [event_types.SECRET_WRITTEN, event_types.SECRET_DELETED, event_types.SECRET_ROTATED].forEach(event => {
         eventSource.on(event, async (/** @type {string} */ key) => {
-            switch (key) {
-                case SECRET_KEYS.BFL:
-                case SECRET_KEYS.FALAI:
-                case SECRET_KEYS.STABILITY:
-                case SECRET_KEYS.AIMLAPI:
-                    await loadSettingOptions();
-                    break;
+            const keySourceMap = {
+                [sources.bfl]: SECRET_KEYS.BFL,
+                [sources.falai]: SECRET_KEYS.FALAI,
+                [sources.stability]: SECRET_KEYS.STABILITY,
+                [sources.aimlapi]: SECRET_KEYS.AIMLAPI,
+                [sources.comfy]: SECRET_KEYS.COMFY_RUNPOD,
+                [sources.pollinations]: SECRET_KEYS.POLLINATIONS,
+            };
+            const shouldReloadOptions = Object.entries(keySourceMap).some(([k, v]) => k === extension_settings.sd.source && v === key);
+            if (!shouldReloadOptions) {
+                return;
             }
+            await loadSettingOptions();
         });
     });
 
@@ -4882,6 +5818,25 @@ jQuery(async () => {
         return isNegative ? negativePrompt : characterPrompt;
     };
 
-    MacrosParser.registerMacro('charPrefix', () => getMacroValue({ isNegative: false }), t`Character's positive positive Image Generation prompt prefix`);
-    MacrosParser.registerMacro('charNegativePrefix', () => getMacroValue({ isNegative: true }), t`Character's negative Image Generation prompt prefix`);
+    if (power_user.experimental_macro_engine) {
+        macros.register('charPrefix', {
+            category: MacroCategory.PROMPTS,
+            description: t`Character's positive Image Generation prompt prefix`,
+            handler: () => getMacroValue({ isNegative: false }),
+        });
+        macros.register('charNegativePrefix', {
+            category: MacroCategory.PROMPTS,
+            description: t`Character's negative Image Generation prompt prefix`,
+            handler: () => getMacroValue({ isNegative: true }),
+        });
+    } else {
+        MacrosParser.registerMacro('charPrefix',
+            () => getMacroValue({ isNegative: false }),
+            t`Character's positive Image Generation prompt prefix`,
+        );
+        MacrosParser.registerMacro('charNegativePrefix',
+            () => getMacroValue({ isNegative: true }),
+            t`Character's negative Image Generation prompt prefix`,
+        );
+    }
 });

@@ -17,6 +17,7 @@ let vllmModels = [];
 let aphroditeModels = [];
 let featherlessModels = [];
 let tabbyModels = [];
+let llamacppModels = [];
 export let openRouterModels = [];
 
 /**
@@ -24,29 +25,32 @@ export let openRouterModels = [];
  * @type {string[]}
  */
 const OPENROUTER_PROVIDERS = [
-    // An alphabetically separate set of very-dead providers is kept at the top of the list in the docs.
-    // These do not appear outside the docs: Anyscale, Cent-ML, HuggingFace ... SF Compute, Together 2, 01.AI
-    // As a visual check, AI21 is the topmost provider in the sidebar of https://openrouter.ai/models, thus we want to copy from this point and below.
     // Providers endpoint: https://openrouter.ai/api/v1/providers
+    // The list should resemble the sidebar from https://openrouter.ai/models
+    // Their docs no longer displays the list, which had "super dead" ones at top, thankfully gone from /v1/providers
     'AI21',
     'AionLabs',
     'Alibaba',
     'Amazon Bedrock',
+    'Amazon Nova',
+    'Ambient',
     'Anthropic',
+    'Arcee AI',
     'AtlasCloud',
-    'Atoma',
     'Avian',
     'Azure',
     'BaseTen',
+    'Black Forest Labs',
     'Cerebras',
     'Chutes',
+    'Cirrascale',
+    'Clarifai',
     'Cloudflare',
     'Cohere',
-    'CrofAI',
     'Crusoe',
     'DeepInfra',
     'DeepSeek',
-    'Enfer',
+    'FakeProvider',
     'Featherless',
     'Fireworks',
     'Friendli',
@@ -56,23 +60,22 @@ const OPENROUTER_PROVIDERS = [
     'Groq',
     'Hyperbolic',
     'Inception',
+    'Inceptron',
     'InferenceNet',
     'Infermatic',
     'Inflection',
-    'InoCloud',
-    'Kluster',
-    'Lambda',
     'Liquid',
     'Mancer 2',
-    'Meta',
+    'Mara',
     'Minimax',
     'Mistral',
+    'ModelRun',
+    'Modular',
     'Moonshot AI',
     'Morph',
     'NCompass',
     'Nebius',
     'NextBit',
-    'Nineteen',
     'Novita',
     'Nvidia',
     'OpenAI',
@@ -80,16 +83,21 @@ const OPENROUTER_PROVIDERS = [
     'Parasail',
     'Perplexity',
     'Phala',
+    'Relace',
     'SambaNova',
+    'Seed',
     'SiliconFlow',
+    'Sourceful',
     'Stealth',
+    'StepFun',
+    'StreamLake',
     'Switchpoint',
-    'Targon',
     'Together',
-    'Ubicloud',
+    'Upstage',
     'Venice',
     'WandB',
     'xAI',
+    'Xiaomi',
     'Z.AI',
 ];
 
@@ -134,6 +142,30 @@ export async function loadTabbyModels(data) {
         option.text = model.id;
         option.selected = model.id === textgen_settings.tabby_model;
         $('#tabby_model').append(option);
+    }
+}
+
+export async function loadLlamaCppModels(data) {
+    if (!Array.isArray(data)) {
+        console.error('Invalid llama.cpp models data', data);
+        return;
+    }
+
+    llamacppModels = data;
+    llamacppModels.sort((a, b) => a.id.localeCompare(b.id));
+    llamacppModels.unshift({ id: '' });
+
+    if (!llamacppModels.find(x => x.id === textgen_settings.llamacpp_model)) {
+        textgen_settings.llamacpp_model = llamacppModels[0]?.id || '';
+    }
+
+    $('#llamacpp_model').empty();
+    for (const model of llamacppModels) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.text = model.id;
+        option.selected = model.id === textgen_settings.llamacpp_model;
+        $('#llamacpp_model').append(option);
     }
 }
 
@@ -509,14 +541,11 @@ export async function loadFeatherlessModels(data) {
 
             if (selectedCategory === 'All') {
                 return matchesSearch && matchesClass;
-            }
-            else if (selectedCategory === 'Top') {
+            } else if (selectedCategory === 'Top') {
                 return matchesSearch && matchesClass && matchesTop;
-            }
-            else if (selectedCategory === 'New') {
+            } else if (selectedCategory === 'New') {
                 return matchesSearch && matchesClass && matchesNew;
-            }
-            else {
+            } else {
                 return matchesSearch && matchesClass;
             }
         });
@@ -632,6 +661,12 @@ function onOllamaModelSelect() {
 function onTabbyModelSelect() {
     const modelId = String($('#tabby_model').val());
     textgen_settings.tabby_model = modelId;
+    $('#api_button_textgenerationwebui').trigger('click');
+}
+
+function onLlamaCppModelSelect() {
+    const modelId = String($('#llamacpp_model').val());
+    textgen_settings.llamacpp_model = modelId;
     $('#api_button_textgenerationwebui').trigger('click');
 }
 
@@ -847,8 +882,8 @@ async function downloadTabbyModel() {
         }
 
         // Params for the server side of ST
-        params['api_server'] = serverUrl;
-        params['api_type'] = textgen_settings.type;
+        params.api_server = serverUrl;
+        params.api_type = textgen_settings.type;
 
         toastr.info('Downloading. Check the Tabby console for progress reports.');
 
@@ -929,15 +964,9 @@ export function getCurrentOpenRouterModelTokenizer() {
 export function getCurrentDreamGenModelTokenizer() {
     const modelId = textgen_settings.dreamgen_model;
     const model = dreamGenModels.find(x => x.id === modelId);
-    if (model.id.startsWith('opus-v1-sm')) {
+    if (model.id.startsWith('lucid-v1-medium') || model.id.startsWith('lucid-v1-base')) {
         return tokenizers.MISTRAL;
-    } else if (model.id.startsWith('opus-v1-lg')) {
-        return tokenizers.YI;
-    } else if (model.id.startsWith('opus-v1-xl')) {
-        return tokenizers.LLAMA;
-    } else if (model.id.startsWith('lucid-v1-medium')) {
-        return tokenizers.NEMO;
-    } else if (model.id.startsWith('lucid-v1-extra-large')) {
+    } else if (model.id.startsWith('lucid-v1-extra-large') || model.id.startsWith('lucid-v1-max')) {
         return tokenizers.LLAMA3;
     } else {
         return tokenizers.MISTRAL;
@@ -956,6 +985,7 @@ export function initTextGenModels() {
     $('#aphrodite_model').on('change', onAphroditeModelSelect);
     $('#tabby_download_model').on('click', downloadTabbyModel);
     $('#tabby_model').on('change', onTabbyModelSelect);
+    $('#llamacpp_model').on('change', onLlamaCppModelSelect);
     $('#featherless_model').on('change', () => onFeatherlessModelSelect(String($('#featherless_model').val())));
 
     const providersSelect = $('.openrouter_providers');
@@ -988,6 +1018,13 @@ export function initTextGenModels() {
             width: '100%',
         });
         $('#tabby_model').select2({
+            placeholder: t`[Currently loaded]`,
+            searchInputPlaceholder: t`Search models...`,
+            searchInputCssClass: 'text_pole',
+            width: '100%',
+            allowClear: true,
+        });
+        $('#llamacpp_model').select2({
             placeholder: t`[Currently loaded]`,
             searchInputPlaceholder: t`Search models...`,
             searchInputCssClass: 'text_pole',
@@ -1029,6 +1066,13 @@ export function initTextGenModels() {
             searchInputCssClass: 'text_pole',
             width: '100%',
             templateResult: getAphroditeModelTemplate,
+        });
+        $('.openrouter_quantizations').select2({
+            closeOnSelect: false,
+            placeholder: t`Select quantizations. No selection = all quantizations.`,
+            searchInputCssClass: 'text_pole',
+            searchInputPlaceholder: t`Search quantizations...`,
+            width: '100%',
         });
         providersSelect.select2({
             sorter: data => data.sort((a, b) => a.text.localeCompare(b.text)),

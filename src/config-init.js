@@ -124,6 +124,16 @@ const keyMigrationMap = [
         migrate: () => void 0,
         remove: true,
     },
+    {
+        oldKey: 'autheliaAuth',
+        newKey: 'sso.autheliaAuth',
+        migrate: (value) => value,
+    },
+    {
+        oldKey: 'authentikAuth',
+        newKey: 'sso.authentikAuth',
+        migrate: (value) => value,
+    },
 ];
 
 /**
@@ -228,7 +238,7 @@ export function addMissingConfigValues(configPath) {
 
         fs.writeFileSync(configPath, yaml.stringify(config));
     } catch (error) {
-        console.error(color.red('FATAL: Could not add missing config values to config.yaml'), error);
+        console.warn(color.yellow('Could not add missing config values to config.yaml'), error);
     }
 }
 
