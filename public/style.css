@@ -61,6 +61,19 @@
     --interactable-outline-color: var(--white100);
     --interactable-outline-color-faint: var(--white20a);
 
+    .select_chat_block.bulk-mode-readonly {  
+        opacity: 0.7;  
+        cursor: default !important;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode {  
+        cursor: pointer;  
+    }  
+      
+    .select_chat_block_wrapper.bulk-mode:hover {  
+        background-color: rgba(255, 255, 255, 0.1);  
+    }
+
     --reasoning-body-color: var(--SmartThemeEmColor);
     --reasoning-em-color: color-mix(in srgb, var(--SmartThemeEmColor) 67%, var(--SmartThemeBlurTintColor) 33%);
     --reasoning-saturation: 0.5;
@@ -339,6 +352,16 @@ input[type='checkbox']:focus-visible {
     border: 1px solid var(--SmartThemeBorderColor);
     max-height: 100%;
     overflow: hidden;
+}
+
+#spoiler_free_desc_button{
+    margin-right: 1em;
+    opacity: 0.00;
+    transition: 200ms;
+            &:hover {
+        opacity: 1;
+        filter: saturate(1.0);
+        }
 }
 
 .fa-solid::before,
@@ -678,6 +701,11 @@ small {
     margin: 0;
 }
 
+.mes.smallSysMes .swipe_right,
+.mes.smallSysMes .swipe_left {
+    display: none !important;
+}
+
 .mes.smallSysMes .mes_text {
     padding: 0 !important;
     text-align: center;
@@ -742,9 +770,69 @@ hr {
     opacity: 0.2;
 }
 
+#bg1,
+#bg_custom {
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-size: cover;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transition: background-image var(--animation-duration-3x) ease-in-out;
+}
+
+/* Background fitting options */
+#background_fitting {
+    max-width: 6em;
+}
+
+/* Fill/Cover - scales to fill width while maintaining aspect ratio */
+#bg1.cover,
+#bg_custom.cover {
+    background-size: cover;
+    background-position: center;
+}
+
+/* Fit/Contain - shows entire image maintaining aspect ratio */
+#bg1.contain,
+#bg_custom.contain {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Stretch - stretches to fill entire space */
+#bg1.stretch,
+#bg_custom.stretch {
+    background-size: 100% 100%;
+}
+
+/* Center - centers without scaling */
+#bg1.center,
+#bg_custom.center {
+    background-size: auto;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+body.reduced-motion #bg1,
+body.reduced-motion #bg_custom {
+    transition: none;
+}
+
 #version_display {
     padding: 5px;
     opacity: 0.8;
+}
+
+#bg1 {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+    z-index: -3;
+}
+
+#bg_custom {
+    background-image: none;
+    z-index: -2;
 }
 
 /*TOPPER margin*/
@@ -3040,10 +3128,6 @@ select option:not(:checked) {
     color: var(--white70a);
 }
 
-select option[disabled]:not(:checked) {
-    color: var(--white30a);
-}
-
 /*#######################################################################*/
 
 #rm_api_block {
@@ -3061,7 +3145,6 @@ select option[disabled]:not(:checked) {
     text-align: center;
 }
 
-.menu_button[disabled],
 .menu_button.disabled {
     filter: brightness(75%) grayscale(1);
     opacity: 0.5;
@@ -3121,11 +3204,6 @@ select option[disabled]:not(:checked) {
 
 #api_url_text {
     display: block;
-}
-
-/* Fix font size difference in API Connections dropdowns - Issue #4599 */
-#custom_model_id {
-    font-size: calc(var(--mainFontSize) * 0.95);
 }
 
 .menu_button.api_button:hover {
@@ -3552,20 +3630,12 @@ grammarly-extension {
     align-items: baseline;
 }
 
-#creator_notes_spoiler:empty,
-#creator_notes_empty,
 #creators_note_desc_hidden {
     display: none;
 }
 
-#creator_notes_spoiler:empty~#creator_notes_empty {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-    font-size: calc(var(--mainFontSize) * 0.9);
-    color: var(--SmartThemeEmColor);
+#creators_notes_div:has(#spoiler_free_desc_button.fa-eye-slash) #creators_note_desc_hidden {
+    display: initial;
 }
 
 .alternate_greeting details {
@@ -4163,6 +4233,14 @@ input[type='checkbox'].del_checkbox {
     flex: 1;
     gap: 5px;
     display: flex;
+}
+
+.range-block label.checkbox_label span[data-i18n="Unlocked Context Size"] {
+    margin-bottom: 10px; 
+    display: block; /* block element to control margin/padding better */
+    font-size: 0.9em;
+    color: #9c96fa;
+    padding: 5px; 
 }
 
 .toggle-description {
@@ -5435,6 +5513,19 @@ body:has(#character_popup.open) #top-settings-holder:has(.drawer-content.openDra
     align-items: center;
     padding: 5px 0;
     cursor: pointer;
+}
+
+#p-lb {
+    filter: saturate(0.5);
+    margin-right: 1em;
+    opacity: 0.25;
+    transition: 200ms;
+    
+    
+        &:hover {
+    opacity: 1;
+    filter: saturate(1.0);
+    }
 }
 
 .inline-drawer-content {
