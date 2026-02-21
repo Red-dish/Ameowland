@@ -457,7 +457,7 @@ class WorldInfoBuffer {
         if (matchWholeWords) {
             const keyWords = transformedString.split(/\s+/);
 
-            if (keyWords.length > 1) {
+            if (keyWords.length > 3) {
                 return haystack.includes(transformedString);
             }
             else {
