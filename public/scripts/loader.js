@@ -1,5 +1,7 @@
 import { POPUP_RESULT, POPUP_TYPE, Popup } from './popup.js';
 
+const LOADER_MESSAGES = ['Cooking', 'Loading', 'Meowing', 'Almost there'];
+
 /** @type {Popup} */
 let loaderPopup;
 
@@ -9,9 +11,16 @@ export function showLoader() {
     // Two loaders don't make sense. Don't await, we can overlay the old loader while it closes
     if (loaderPopup) loaderPopup.complete(POPUP_RESULT.CANCELLED);
 
+    const message = LOADER_MESSAGES[Math.floor(Math.random() * LOADER_MESSAGES.length)];
+
     loaderPopup = new Popup(`
         <div id="loader">
-            <div id="load-spinner" class="fa-solid fa-gear fa-spin fa-3x"></div>
+            <div id="load-spinner">
+                <div id="loader-text">${message}</div>
+                <div id="loader-cats">
+                    <span class="cat-slider"><span class="pixel-cat"></span></span>
+                </div>
+            </div>
         </div>`, POPUP_TYPE.DISPLAY, null, { transparent: true, animation: 'none', wide: true, large: true });
 
     // No close button, loaders are not closable
