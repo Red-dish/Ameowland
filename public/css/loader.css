@@ -17,15 +17,65 @@
 }
 
 #load-spinner {
-    --spinner-size: 2em;
     transition: all var(--animation-duration-2x) ease-out;
     opacity: 1;
-    top: calc(50% - var(--spinner-size) / 2);
-    left: calc(50% - var(--spinner-size) / 2);
     position: absolute;
-    width: var(--spinner-size);
-    height: var(--spinner-size);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: auto;
+    height: auto;
     display: flex;
+    flex-direction: column;
     align-items: center;
+    gap: 1.5rem;
+}
+
+/* Loading text */
+#loader-text {
+    font-size: 2em;
+    font-family: GitLab Mono;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor);
+    white-space: nowrap;
+}
+
+#loader-text::after {
+    content: '';
+    animation: loader-dots 6s steps(1, end) infinite;
+}
+
+/* Cat running track */
+#loader-cats {
+    display: flex;
     justify-content: center;
+    align-items: center;
+    height: 48px;
+}
+
+/* Pixel art sprite cat */
+.pixel-cat {
+    display: block;
+    width: 48px;
+    height: 48px;
+    background-image: url('/img/OrangeTabby-Run.png');
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;   /* Safari */
+    animation: cat-frames 1.8s steps(6, end) infinite;
+}
+
+/* Animated dots: '' -> ' .' -> ' . .' -> ' . . .' */
+@keyframes loader-dots {
+    0%   { content: ' .'; }
+    25%  { content: ' . .'; }
+    50%  { content: ' . . .'; }
+    75%  { content: ''; }
+}
+
+/* Sprite sheet frame cycling: 6 frames × 48px = 288px total width */
+@keyframes cat-frames {
+    from { background-position: 0 0; }
+    to   { background-position: -288px 0; }
 }
