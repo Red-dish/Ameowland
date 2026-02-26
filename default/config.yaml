@@ -233,6 +233,12 @@ whitelistImportDomains:
 ##   headers:
 ##     User-Agent: "Googlebot/2.1 (+http://www.google.com/bot.html)"
 requestOverrides: []
+# Blocked API endpoints - requests to these base URLs will be rejected.
+# Matching is prefix-based and case-insensitive.
+# Remove entries or clear the list to unblock endpoints.
+blockedApiEndpoints:
+  - https://api.voidai.app
+  - https://beta.voidai.app
 
 # EXTENSIONS CONFIGURATION
 extensions:

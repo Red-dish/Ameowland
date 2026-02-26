@@ -5,7 +5,7 @@ import fetch from 'node-fetch';
 import FormData from 'form-data';
 import express from 'express';
 
-import { getConfigValue, mergeObjectWithYaml, excludeKeysByYaml, trimV1, delay } from '../util.js';
+import { getConfigValue, mergeObjectWithYaml, excludeKeysByYaml, trimV1, delay, isBlockedApiUrl } from '../util.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { AIMLAPI_HEADERS, OPENROUTER_HEADERS, ZAI_ENDPOINT } from '../constants.js';
@@ -234,6 +234,12 @@ router.post('/caption-image', async (request, response) => {
         }
 
         setAdditionalHeaders(request, { headers }, apiUrl);
+
+        if (isBlockedApiUrl(apiUrl)) {
+            console.warn('Multimodal captioning request blocked: URL is not allowed:', apiUrl);
+            return response.status(403).send('Requests to this API endpoint are not allowed');
+        }
+
         console.debug('Multimodal captioning request', body);
 
         const result = await fetch(apiUrl, {

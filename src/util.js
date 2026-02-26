@@ -965,6 +965,24 @@ export function isValidUrl(url) {
 }
 
 /**
+ * Checks if the given URL is blocked by the server configuration.
+ * @param {string} url URL to check
+ * @returns {boolean} If the URL is blocked
+ */
+export function isBlockedApiUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const blockedEndpoints = getConfigValue('blockedApiEndpoints', [
+        'https://api.voidai.app',
+        'https://beta.voidai.app',
+    ]);
+    if (!Array.isArray(blockedEndpoints)) return false;
+    const normalizedUrl = url.toLowerCase();
+    return blockedEndpoints.some(blocked =>
+        typeof blocked === 'string' && normalizedUrl.startsWith(blocked.toLowerCase())
+    );
+}
+
+/**
  * removes starting `[` or ending `]` from hostname.
  * @param {string} hostname hostname to use
  * @returns {string} hostname plus the modifications

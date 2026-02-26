@@ -28,6 +28,7 @@ import {
     color,
     trimTrailingSlash,
     flattenSchema,
+    isBlockedApiUrl,
 } from '../../util.js';
 import {
     convertClaudeMessages,
@@ -1832,6 +1833,11 @@ router.post('/status', async function (request, statusResponse) {
             return statusResponse.status(400).send({ error: true });
         }
 
+        if (isBlockedApiUrl(apiUrl)) {
+            console.warn('Chat Completion status check blocked: URL is not allowed:', apiUrl);
+            return statusResponse.status(403).send({ error: true, message: 'Requests to this API endpoint are not allowed.' });
+        }
+
         if (!apiKey && !request.body.reverse_proxy && request.body.chat_completion_source !== CHAT_COMPLETION_SOURCES.CUSTOM) {
             console.warn('Chat Completion API key is missing.');
             return statusResponse.status(400).send({ error: true });
@@ -2307,6 +2313,11 @@ router.post('/generate', async function (request, response) {
         } else {
             console.warn('This chat completion source is not supported yet.');
             return response.status(400).send({ error: true });
+        }
+
+        if (isBlockedApiUrl(apiUrl)) {
+            console.warn('Chat Completion request blocked: URL is not allowed:', apiUrl);
+            return response.status(403).send({ error: { message: 'Requests to this API endpoint are not allowed.' } });
         }
 
         // A few of OpenAIs reasoning models support reasoning effort
