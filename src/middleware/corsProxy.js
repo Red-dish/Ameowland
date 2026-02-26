@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { forwardFetchResponse } from '../util.js';
+import { forwardFetchResponse, isBlockedApiUrl } from '../util.js';
 
 /**
  * Middleware to proxy requests to a different domain
@@ -13,6 +13,11 @@ export default async function corsProxyMiddleware(req, res) {
     const serverUrl = req.protocol + '://' + req.get('host');
     if (url.startsWith(serverUrl)) {
         return res.status(400).send('Circular requests are not allowed');
+    }
+
+    // Disallow requests to blocked API endpoints
+    if (isBlockedApiUrl(url)) {
+        return res.status(403).send('Requests to this API endpoint are not allowed');
     }
 
     try {
