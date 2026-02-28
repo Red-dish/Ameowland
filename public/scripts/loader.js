@@ -1,6 +1,6 @@
 import { POPUP_RESULT, POPUP_TYPE, Popup } from './popup.js';
 
-const LOADER_MESSAGES = ['Cooking', 'Loading', 'Ameowing', 'Almost there', 'Skidaddling', 'Booting up', 'Warming up', 'Purring', 'Chasing mice', 'Sharpening claws', 'Stretching', 'Napping', 'Yawning', 'Pouncing on bugs'];
+const LOADER_MESSAGES = ['Cooking', 'Loading', 'Gooning', 'Ameowing', 'Almost there', 'Skidaddling', 'Booting up', 'Warming up', 'Purring', 'Chasing mice', 'Sharpening claws', 'Stretching', 'Napping', 'Yawning', 'Pouncing on bugs'];
 
 /** @type {Popup} */
 let loaderPopup;
