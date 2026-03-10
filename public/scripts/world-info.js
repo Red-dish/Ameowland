@@ -44,7 +44,7 @@ const botmakersMap = {
     "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-tristan"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
-    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea"],
+    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean"],
     "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
     "sapphira":["bb-sapphira-astinthorne"],
     "alyrianna":["bb-alyrianna-Alec&Ash"],
