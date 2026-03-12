@@ -28,11 +28,6 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 const botmakersMap = {
     "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel"],
-    "hailey": [
-        "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
-        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
-        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", 
-        "bb-hailey-Jett", "bb-hailey-Elias","bb-hailey-Nico", "bb-hailey-Leo", "bb-hailey-milo"],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
     "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle"],
     "retsukoh": [
@@ -41,14 +36,13 @@ const botmakersMap = {
         "bb-retsukoh-sephiroth"
     ],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander", "bb-aqua-ryouga"],
-    "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-tristan"],
+    "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-tristan", "bb-dreamweaver-theron"],
     "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
-    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean"],
+    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean", "bb-ravenh-bryson"],
     "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
-    "sapphira":["bb-sapphira-astinthorne"],
-    "alyrianna":["bb-alyrianna-Alec&Ash"],
-    "luckii":["bb-luckii-xaden", "bb-luckii-soren"],
+    "luckii":["bb-luckii-xaden", "bb-luckii-soren", "bb-luckii-lucas"],
+    "toniy": ["bb-toniy-flashbang"],
 };
 
 
