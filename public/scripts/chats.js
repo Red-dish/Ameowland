@@ -73,7 +73,7 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
  * @returns {Promise<string>} Converted file text
  */
 
-const fileSizeLimit = 1024 * 1024 * 350; // 350 MB
+const fileSizeLimit = 1024 * 1024 * 500; // 500 MB
 const ATTACHMENT_SOURCE = {
     GLOBAL: 'global',
     CHARACTER: 'character',
