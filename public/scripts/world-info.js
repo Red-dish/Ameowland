@@ -27,22 +27,22 @@ import { isAdmin, getCurrentUserHandle } from './user.js';
 
 
 const botmakersMap = {
-    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel"],
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel", "#hidden#-narrator"],
     "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle", "bb-violet-dorian"],
     "retsukoh": [
         "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso",
         "bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto",
-        "bb-retsukoh-sephiroth"
-    ],
+        "bb-retsukoh-sephiroth", "bb-retsukoh-zack", "bb-retsukoh-ryan"],
     "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander", "bb-aqua-ryouga"],
     "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-tristan", "bb-dreamweaver-theron"],
-    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
+    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel", "bb-zelle-consorts"],
     "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
-    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean", "bb-ravenh-bryson"],
+    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean", "bb-ravenh-bryson", "bb-ravenh-noah"],
     "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
-    "luckii":["bb-luckii-xaden", "bb-luckii-soren", "bb-luckii-lucas"],
-    "toniy": ["bb-toniy-flashbang"],
+    "luckii":["bb-luckii-xaden", "bb-luckii-soren", "bb-luckii-lucas", "bb-luckii-peeta"],
+    "toniy": ["bb-toniy-flashbang", "bb-toniy-carat"],
+    "noface": ["bb-noface-alexander"],
 };
 
 
@@ -3678,7 +3678,7 @@ export async function getWorldEntry(name, data, entry) {
             return;
         }
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move/Copy '${sourceName}' to:`;
+        wrapper.textContent = t`ONLY Copy '${sourceName}' to:`;
         const container = document.createElement('div');
         container.appendChild(wrapper);
         container.appendChild(select);
@@ -3689,7 +3689,6 @@ export async function getWorldEntry(name, data, entry) {
         const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
             cancelButton: t`Cancel`,
             customButtons: [
-                { text: t`Move`, result: POPUP_RESULT.CUSTOM1 },
                 { text: t`Copy`, result: POPUP_RESULT.CUSTOM2 },
             ],
         });
@@ -5361,7 +5360,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     buffer.resetExternalEffects();
     timedEffects.cleanUp();
 
-    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`, Array.from(allActivatedEntries.values()));
+    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`);
     console.debug(`[WI] --- DONE${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
     return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, outletEntries: WIOutletEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };

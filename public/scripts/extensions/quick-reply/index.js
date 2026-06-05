@@ -16,7 +16,6 @@ export { debounceAsync };
 
 const _VERBOSE = true;
 export const debug = (...msg) => _VERBOSE ? console.debug('[QR2]', ...msg) : null;
-export const log = (...msg) => _VERBOSE ? console.log('[QR2]', ...msg) : null;
 export const warn = (...msg) => _VERBOSE ? console.warn('[QR2]', ...msg) : null;
 
 
