@@ -1,29 +1,25 @@
 {
     "compilerOptions": {
-        "checkJs": true,
-        "target": "ESNext",
         "module": "ESNext",
-        "moduleResolution": "node",
+        "target": "ES2023",
+        "moduleResolution": "Bundler",
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "checkJs": true,
         "allowUmdGlobalAccess": true,
         "allowSyntheticDefaultImports": true,
-        "strictBindCallApply": true,
-        "baseUrl": ".",
-        "paths": {
-            "/*": [
-                "./*"
-            ]
-        }
+        "resolveJsonModule": true,
+        "strictBindCallApply": true
     },
     "exclude": [
         "**/node_modules/**",
         "**/dist/**",
         "**/.git/**",
-        "lib/**",
-        "**/*.min.js",
-        "scripts/extensions/quick-reply/lib/**",
-        "scripts/extensions/tts/lib/**"
-    ],
-    "typeAcquisition": {
-        "include": []
-    }
+        "public/**",
+        "backups/**",
+        "data/**",
+        "cache/**",
+        "src/tokenizers/**",
+        "docker/**"
+    ]
 }
