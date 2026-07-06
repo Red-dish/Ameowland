@@ -1,7 +1,7 @@
 import { Fuse } from '../lib.js';
 
-import { saveSettings, substituteParams, getRequestHeaders, chat_metadata, this_chid, characters, saveCharacterDebounced, menu_type, eventSource, event_types, getExtensionPromptByName, saveMetadata, getCurrentChatId, extension_prompt_roles, create_save, createOrEditCharacter, name1 } from '../script.js';
- import { download, debounce, initScrollHeight, resetScrollHeight, parseJsonFile, extractDataFromPng, getFileBuffer, getCharaFilename, getSortableDelay, escapeRegex, PAGINATION_TEMPLATE, navigation_option, waitUntilCondition, isTrueBoolean, setValueByPath, flashHighlight, select2ModifyOptions, getSelect2OptionId, dynamicSelect2DataViaAjax, highlightRegex, select2ChoiceClickSubscribe, isFalseBoolean, getSanitizedFilename, checkOverwriteExistingData, getStringHash, parseStringArray, cancelDebounce, findChar, onlyUnique, equalsIgnoreCaseAndAccents, uuidv4, normalizeArray, getUniqueName, logSlashCommandWarn } from './utils.js';
+import { saveSettings, substituteParams, getRequestHeaders, chat_metadata, this_chid, characters, saveCharacterDebounced, menu_type, eventSource, event_types, getExtensionPromptByName, saveMetadata, getCurrentChatId, extension_prompt_roles, create_save, createOrEditCharacter, name1, getOneCharacter, select_selected_character } from '../script.js';
+import { download, debounce, initScrollHeight, resetScrollHeight, parseJsonFile, extractDataFromPng, getFileBuffer, getCharaFilename, getSortableDelay, escapeRegex, PAGINATION_TEMPLATE, navigation_option, waitUntilCondition, isTrueBoolean, setValueByPath, flashHighlight, select2ModifyOptions, getSelect2OptionId, dynamicSelect2DataViaAjax, highlightRegex, select2ChoiceClickSubscribe, isFalseBoolean, getSanitizedFilename, checkOverwriteExistingData, getStringHash, parseStringArray, cancelDebounce, findChar, onlyUnique, equalsIgnoreCaseAndAccents, uuidv4, normalizeArray, getUniqueName, logSlashCommandWarn, addLongPressEvent, escapeHtml, setInfoBlock, clearInfoBlock } from './utils.js';
 import { extension_settings, getContext } from './extensions.js';
 import { NOTE_MODULE_NAME, metadata_keys, shouldWIAddPrompt } from './authors-note.js';
 import { isMobile } from './RossAscends-mods.js';
@@ -23,114 +23,6 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, user_avatar } from './personas.js';
-import { isAdmin, getCurrentUserHandle } from './user.js';
-
-
-const botmakersMap = {
-    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel"],
-    "hailey": [
-        "bb-hailey-ash", "bb-hailey-Daniel", "bb-hailey-Halmeoni", "bb-hailey-Julianne", 
-        "bb-hailey-Keanu", "bb-hailey-thane","bb-hailey-hypnos","bb-hailey-branch", "bb-hailey-Rafe",
-        "bb-hailey-puzzles", "bb-hailey-noah", "bb-hailey-heartscapes", "bb-hailey-Kieran", 
-        "bb-hailey-Jett", "bb-hailey-Elias","bb-hailey-Nico", "bb-hailey-Leo"
-    ],
-    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
-    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle"],
-    "retsukoh": [
-        "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso",
-        "bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto",
-        "bb-retsukoh-sephiroth"
-    ],
-    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander"],
-    "dreamweaver":["bb-dreamweaver-Venryk"],
-    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel"],
-    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
-    "ravenh":["bb-ravenh-Ryker"],
-    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
-    "sapphira":["bb-sapphira-astinthorne"],
-    "alyrianna":["bb-alyrianna-Alec&Ash"]
-};
-
-
-/**
-*Checks if the current user is an admin*
-*@returns {boolean} Whether the current user is an admin*
-*/
-function isCurrentUserAdmin() {
-    try {
-        // Use the existing isAdmin function if available
-        if (typeof isAdmin === 'function') {
-            return isAdmin();
-        }
-
-        // Fallback to checking specific admin usernames
-        const userHandle = getCurrentUserHandle();
-        return ['admin', 'default-user'].includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking admin status:', error);
-        return false;
-    }
-}
-
-/**
- *Checks if the current user is a botmaker*
-* @returns {boolean} Whether the current user is a botmaker*
- */
-function isCurrentUserBotmaker() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return Object.keys(botmakersMap).includes(userHandle);
-    } catch (error) {
-        console.error('[WI] Error checking botmaker status:', error);
-        return false;
-    }
-}
-
-/**
-* Gets the list of loreBooks the current user has access to if they're a botmaker*
- *@returns {string[]} Array of loreBook names the user has access to*
-*/
-function getBotmakerAllowedLoreBooks() {
-    try {
-        const userHandle = getCurrentUserHandle();
-        return botmakersMap[userHandle] || [];
-    } catch (error) {
-        console.error('[WI] Error getting allowed loreBooks:', error);
-        return [];
-    }
-}
-
-/**
-*Checks if a user has access to view a specific loreBook*
-*@param {string} lorebookName - Name of the loreBook to check access for*
-*@returns {boolean} Whether the user has access to the loreBook*
-*/
-function hasLoreBookAccess(lorebookName) {
-    // Admins have access to everything
-    if (isCurrentUserAdmin()) {
-        return true;
-    }
-
-    // Assume personal loreBooks are prefixed with "bb-username-"
-    const userHandle = getCurrentUserHandle();
-    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
-        return true; // User's personal loreBook
-    }
-
-    // Check if it's a global loreBook (no special prefix)
-    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
-        return true; // Global loreBook accessible to all
-    }
-
-    // For botmakers, check if they have access to this specific loreBook
-    if (isCurrentUserBotmaker()) {
-        const allowedBooks = getBotmakerAllowedLoreBooks();
-        return allowedBooks.includes(lorebookName);
-    }
-
-    // By default, deny access
-    return false;
-}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -457,10 +349,9 @@ class WorldInfoBuffer {
         if (matchWholeWords) {
             const keyWords = transformedString.split(/\s+/);
 
-            if (keyWords.length > 3) {
+            if (keyWords.length > 1) {
                 return haystack.includes(transformedString);
-            }
-            else {
+            } else {
                 // Use custom boundaries to include punctuation and other non-alphanumeric characters
                 const regex = new RegExp(`(?:^|\\W)(${escapeRegex(transformedString)})(?:$|\\W)`);
                 if (regex.test(haystack)) {
@@ -783,7 +674,6 @@ class WorldInfoTimedEffects {
                 console.log('[WI] Timed effect "delay" applied to entry', entry);
             }
         }
-
     }
 
     /**
@@ -945,7 +835,7 @@ export function updateWorldInfoSettings(settings, activeWorldInfo) {
         world_info_use_group_scoring: (value) => world_info_use_group_scoring = Boolean(value),
         world_info_max_recursion_steps: (value) => world_info_max_recursion_steps = Number(value),
         // Unused
-        world_info: (_value) => {},
+        world_info: (_value) => { },
     };
 
     for (const [key, setter] of Object.entries(fields)) {
@@ -1023,74 +913,6 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanD
         outletEntries: activatedWorldInfo.outletEntries ?? {},
     };
 }
-/**
-*Filters world names based on user permissions*
-*@param {object} data - The data containing world names*
-*@returns {string[]} Filtered list of world names*
-*/
-function filterWorldNames(data) {
-    let world_names = data.world_names?.length ? data.world_names : [];
-    console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
-
-    if (Array.isArray(world_names)) {
-        try {
-            const currentUserHandle = getCurrentUserHandle();
-            const isUserAdmin = isCurrentUserAdmin();
-            const isUserBotmaker = isCurrentUserBotmaker();
-            console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
-
-            // Exempt admins from filtering
-            if (isUserAdmin) {
-                console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
-                // No filtering needed - return all world names
-                return world_names;
-            } else {
-                console.log('[WorldInfo] Applying filters for user', currentUserHandle);
-
-                // First layer: Filter out #hidden# files for non-admins
-                let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
-                console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
-
-                // Second layer: Apply user handle pattern matching
-                world_names = filteredNames.filter(name => {
-                    // Personal loreBooks: match username prefix
-                    if (name.startsWith(`bb-${currentUserHandle}-`)) {
-                        return true;
-                    }
-
-                    // Global loreBooks: available to everyone
-                    if (!name.startsWith('bb-')) {
-                        return true;
-                    }
-
-                    // Botmaker loreBooks: check permissions
-                    if (isUserBotmaker) {
-                        const allowedBooks = getBotmakerAllowedLoreBooks();
-                        return allowedBooks.includes(name);
-                    }
-
-                    // User-specific loreBooks: deny access
-                    if (name.match(/^\$\$-(\w+)/)) {
-                        console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
-                        return false;
-                    }
-
-                    return false;
-                });
-
-                console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
-                return world_names;
-            }
-        } catch (error) {
-            console.error('[WorldInfo] Error during world filtering:', error);
-            // In case of error, keep original world_names
-            return world_names;
-        }
-    }
-
-    return world_names;
-}
-
 
 export function setWorldInfoSettings(settings, data) {
     if (settings.world_info_depth !== undefined)
@@ -1171,71 +993,6 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
 
     world_names = data.world_names?.length ? data.world_names : [];
-
-
-        if (typeof getCurrentUserHandle !== 'function') {
-            function getCurrentUserHandle() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Try to get from localStorage or sessionStorage
-                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
-                        if (userID) return userID;
-                        
-                        // Check if it's available from other ST modules
-                        if (window.userSettings && window.userSettings.name) {
-                            return window.userSettings.name;
-                        }
-                    }
-                    
-                    // If running in Node.js side of SillyTavern
-                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
-                        return process.env.CURRENT_USER;
-                    }
-                    
-                    return 'anonymous';
-                } catch (error) {
-                    console.error('[WorldInfo] Error getting user handle:', error);
-                    return 'anonymous';
-                }
-            }
-            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
-        }
-
-// Function to check if user is admin - only define if it doesn't exist
-        if (typeof isAdmin !== 'function') {
-            function isAdmin() {
-                try {
-                    // Check if we're in a browser environment
-                    if (typeof window !== 'undefined') {
-                        // Check if it's available from other ST modules
-                        if (typeof window.isUserAdmin === 'function') {
-                            return window.isUserAdmin();
-                        }
-                        
-                        // Fallback to checking specific admin users
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    // If running in Node.js side
-                    if (typeof process !== 'undefined') {
-                        const userHandle = getCurrentUserHandle();
-                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
-                        return adminUsers.includes(userHandle);
-                    }
-                    
-                    return false;
-                } catch (error) {
-                    console.error('[WorldInfo] Error checking admin status:', error);
-                    return false;
-                }
-            }
-            console.log('[WorldInfo] Defined fallback isAdmin function');
-        }
-        // Call the function with the data and assign the result back
-        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -1383,8 +1140,7 @@ function registerWorldInfoSlashCommands() {
             // Also assign the book now - additional if requested, otherwise as primary
             if (type === 'additional') {
                 await charUpdateAddAuxWorld(character.avatar, newName);
-            }
-            else {
+            } else {
                 await charUpdatePrimaryWorld(newName);
             }
             // Refresh UI, if needed
@@ -2312,7 +2068,7 @@ export async function updateWorldInfoList() {
     if (result.ok) {
         const data = await result.json();
         const editorSelected = String($('#world_editor_select').find(':selected').text());
-        world_names = filterWorldNames(data);
+        world_names = data.world_names?.length ? data.world_names : [];
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -2555,29 +2311,8 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     updateEditor = async (navigation, flashOnNav = true) => await displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
-
-    const hasEditPermission = isCurrentUserAdmin() ||
-                              !name.startsWith('bb-') ||
-                              name.startsWith(`bb-${getCurrentUserHandle()}-`) ||
-                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
-
-    if (!hasEditPermission) {
-        // Make all inputs and controls read-only
-        worldEntriesList.find('input, textarea, select').prop('disabled', true);
-        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
-        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
-
-        // Add a notice
-        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
-    }
-
-
-    // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
-    // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
     clearEntryList(worldEntriesList);
-    worldEntriesList.find('*').off();
-    worldEntriesList.empty().show();
-    
+    worldEntriesList.show();
 
     if (!data || !('entries' in data)) {
         $('#world_popup_new').off('click').on('click', nullWorldInfo);
@@ -2760,45 +2495,125 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
 
     $('#world_apply_current_sorting').off('click').on('click', async () => {
         const entryCount = Object.keys(data.entries).length;
-        const moreThan100 = entryCount > 100;
 
-        let content = '<span>' + t`Apply your current sorting to the "Order" field. The Order values will go down from the chosen number.` + '</span>';
-        if (moreThan100) {
-            content += '<div class="m-t-1"><i class="fa-solid fa-triangle-exclamation" style="color: #FFD43B;"></i> ' + t`More than 100 entries in this world. If you don't choose a number higher than that, the lower entries will default to 0.<br />(Usual default: 100)<br />Minimum: ${entryCount}` + '</div>';
-        }
+        const contentEl = document.createElement('div');
 
-        const result = await Popup.show.input(t`Apply Current Sorting`, content, '100', { okButton: t`Apply`, cancelButton: 'Cancel' });
-        if (!result) return;
+        const heading = document.createElement('h3');
+        heading.textContent = t`Apply Current Sorting`;
+        contentEl.appendChild(heading);
 
-        const start = Number(result);
+        const description = document.createElement('span');
+        const descriptionText = document.createElement('p');
+        descriptionText.innerHTML = t`Assigns Order values to all entries based on their current sort position.`;
+        contentEl.appendChild(descriptionText);
+        const descriptionDetail = document.createElement('p');
+        descriptionDetail.innerHTML = t`Entries are ordered <b>descending</b> by default — the first entry in the list gets the highest value and will be inserted first into the prompt.`;
+        contentEl.appendChild(descriptionDetail);
+        const entryCountText = document.createElement('small');
+        entryCountText.textContent = t`(${entryCount} entries total)`;
+        contentEl.appendChild(entryCountText);
+        contentEl.appendChild(description);
+
+        const warningEl = document.createElement('div');
+        contentEl.appendChild(warningEl);
+
+        /** @type {(startInput: HTMLInputElement, stepInput: HTMLInputElement, ascendingInput: HTMLInputElement) => void} */
+        const updateWarning = (startInput, stepInput, ascendingInput) => {
+            const startVal = Number(startInput.value);
+            const stepVal = Number(stepInput.value);
+            const isAscending = ascendingInput.checked;
+            if (!isAscending && !isNaN(startVal) && !isNaN(stepVal) && startVal - (entryCount - 1) * stepVal < 0) {
+                setInfoBlock(warningEl, t`Some entries will be clamped to Order 0, causing collisions at the bottom. The last entry would reach ${startVal - (entryCount - 1) * stepVal} (${entryCount} entries, step ${stepVal}).`, 'warning');
+            } else {
+                clearInfoBlock(warningEl);
+            }
+        };
+
+        /** @type {import('./popup.js').CustomPopupInput[]} */
+        const customInputs = [
+            {
+                id: 'wi_sort_start',
+                label: t`Starting value`,
+                tooltip: t`The Order value assigned to the first entry. In descending mode, values count down from here; in ascending mode, values count up from here.` + ' ' + t`(${entryCount} entries total)`,
+                type: 'number',
+                defaultState: '100',
+                min: 0,
+                step: 1,
+                autoFocus: true,
+            },
+            {
+                id: 'wi_sort_step',
+                label: t`Step`,
+                tooltip: t`The gap between each Order value. For example, a step of 5 produces values like 100, 95, 90... (descending) or 0, 5, 10... (ascending).`,
+                type: 'number',
+                defaultState: '1',
+                min: 1,
+                step: 1,
+            },
+            {
+                id: 'wi_sort_ascending',
+                label: t`Ascending order`,
+                tooltip: t`When checked, Order values count upward from the starting value (first sorted entry gets the lowest Order). When unchecked, values count downward (first sorted entry gets the highest Order).`,
+                type: 'checkbox',
+                defaultState: false,
+            },
+        ];
+
+        const popup = new Popup(contentEl, POPUP_TYPE.TEXT, null, {
+            okButton: t`Apply`,
+            cancelButton: t`Cancel`,
+            customInputs,
+        });
+
+        const startInput = /** @type {HTMLInputElement} */ (popup.dlg.querySelector('#wi_sort_start'));
+        const stepInput = /** @type {HTMLInputElement} */ (popup.dlg.querySelector('#wi_sort_step'));
+        const ascendingInput = /** @type {HTMLInputElement} */ (popup.dlg.querySelector('#wi_sort_ascending'));
+        startInput.addEventListener('input', () => updateWarning(startInput, stepInput, ascendingInput));
+        stepInput.addEventListener('input', () => updateWarning(startInput, stepInput, ascendingInput));
+        ascendingInput.addEventListener('change', () => updateWarning(startInput, stepInput, ascendingInput));
+        updateWarning(startInput, stepInput, ascendingInput);
+
+        const result = await popup.show();
+        if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+
+        const start = Number(popup.inputResults.get('wi_sort_start') ?? '100');
+        const step = Number(popup.inputResults.get('wi_sort_step') ?? '1');
+        const ascending = Boolean(popup.inputResults.get('wi_sort_ascending'));
+
         if (isNaN(start) || start < 0) {
-            toastr.error(t`Invalid number: ${result}`, t`Apply Current Sorting`);
+            toastr.error(t`Invalid starting value: ${start}`, t`Apply Current Sorting`);
             return;
         }
-        if (start < entryCount) {
-            toastr.warning(t`A number lower than the entry count has been chosen. All entries below that will default to 0.`, t`Apply Current Sorting`);
+        if (isNaN(step) || step < 1) {
+            toastr.error(t`Invalid step value: ${step}`, t`Apply Current Sorting`);
+            return;
+        }
+        if (!ascending && start < entryCount) {
+            toastr.warning(t`A starting value lower than the entry count has been chosen. All entries below that will default to 0.`, t`Apply Current Sorting`);
         }
 
         // We need to sort the entries here, as the data source isn't sorted
         const entries = Object.values(data.entries);
         sortWorldInfoEntries(entries);
 
-        let updated = 0, current = start;
-        for (const entry of entries) {
-            const newOrder = Math.max(current--, 0);
-            if (entry.order === newOrder) continue;
+        let updated = 0;
+        entries.forEach((entry, index) => {
+            const newOrder = ascending
+                ? start + index * step
+                : Math.max(start - index * step, 0);
+            if (entry.order === newOrder) return;
 
             entry.order = newOrder;
-            setWIOriginalDataValue(data, entry.order, 'order', entry.order);
+            setWIOriginalDataValue(data, entry.uid, 'order', entry.order);
             updated++;
-        }
+        });
 
         if (updated > 0) {
-            toastr.info(`Updated ${updated} Order values`, 'Apply Custom Sorting');
+            toastr.info(t`Updated ${updated} Order values`, t`Apply Current Sorting`);
             await saveWorldInfo(name, data, true);
             updateEditor(navigation_option.previous);
         } else {
-            toastr.info('All values up to date', 'Apply Custom Sorting');
+            toastr.info(t`All values up to date`, t`Apply Current Sorting`);
         }
     });
 
@@ -4230,7 +4045,25 @@ export async function deleteWorldInfoEntry(data, uid, { silent = false } = {}) {
         return;
     }
 
-    const confirmation = silent || await Popup.show.confirm(t`Delete the entry with UID: ${uid}?`, t`This action is irreversible!`);
+    const entry = data.entries[uid];
+    if (!entry) {
+        return false;
+    }
+
+    let previewText = '';
+    if (entry.comment && entry.comment.trim()) {
+        previewText = entry.comment.trim();
+    } else if (entry.content) {
+        const lines = entry.content.split(/\r?\n/).filter(line => line.trim());
+        previewText = lines.slice(0, 2).join('\n');
+    }
+
+    const popupHeader = t`Delete world info entry with UID: ${uid}?`;
+    const popupText = previewText
+        ? `<strong>${t`Entry`}:</strong><br>${escapeHtml(previewText).replace(/\n/g, '<br>')}<br><br>${t`This action is irreversible!`}`
+        : t`This action is irreversible!`;
+
+    const confirmation = silent || await Popup.show.confirm(popupHeader, popupText);
     if (!confirmation) {
         return false;
     }
@@ -4346,17 +4179,6 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
-    // Check if user has permission to modify this lorebook
-    if (!isCurrentUserAdmin() && name.startsWith('bb-') && !name.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
-            toastr.error('You do not have permission to modify this lorebook');
-            return;
-        }
-    }
-
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -4371,16 +4193,6 @@ async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
 
-    // Check if user has permission to rename this lorebook
-    if (!isCurrentUserAdmin() && oldName.startsWith('bb-') && !oldName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
-        if (!isAllowedBotmaker) {
-            toastr.error('You do not have permission to rename this lorebook');
-            return;
-        }
-    }
-
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
         return;
@@ -4391,19 +4203,12 @@ async function renameWorldInfo(name, data) {
     }
 
     const entryPreviouslySelected = selected_world_info.findIndex((e) => e === oldName);
+    const retargetPersonaLore = power_user.persona_description_lorebook === oldName;
 
     await saveWorldInfo(newName, data, true);
     await deleteWorldInfo(oldName);
 
-    const existingCharLores = world_info.charLore?.filter((e) => e.extraBooks.includes(oldName));
-    if (existingCharLores && existingCharLores.length > 0) {
-        existingCharLores.forEach((charLore) => {
-            const tempCharLore = charLore.extraBooks.filter((e) => e !== oldName);
-            tempCharLore.push(newName);
-            charLore.extraBooks = tempCharLore;
-        });
-        saveSettingsDebounced();
-    }
+    await updateWorldInfoLinks(oldName, newName, { retargetPersonaLore });
 
     if (entryPreviouslySelected !== -1) {
         const wiElement = getWIElement(newName);
@@ -4418,6 +4223,121 @@ async function renameWorldInfo(name, data) {
 }
 
 /**
+ * Retargets all character lore links from an old world info name to a new one, with an optional confirmation for primary lorebook links
+ * @param {string} oldName Previous WI file name
+ * @param {string} newName New WI file name
+ * @param {{ retargetPersonaLore?: boolean }} [options] Additional relink options
+ * @returns {Promise<void>}
+ */
+async function updateWorldInfoLinks(oldName, newName, { retargetPersonaLore } = {}) {
+    const existingCharLores = world_info.charLore?.filter((e) => e.extraBooks.includes(oldName));
+    if (existingCharLores && existingCharLores.length > 0) {
+        existingCharLores.forEach((charLore) => {
+            const tempCharLore = charLore.extraBooks.filter((e) => e !== oldName);
+            tempCharLore.push(newName);
+            charLore.extraBooks = tempCharLore;
+        });
+        saveSettingsDebounced();
+    }
+
+    // Update link for active persona
+    if (retargetPersonaLore) {
+        power_user.persona_description_lorebook = newName;
+        const object = getOrCreatePersonaDescriptor();
+        object.lorebook = newName;
+        setPersonaDescription();
+        saveSettingsDebounced();
+    }
+
+    // Update links for other personas
+    Object.keys(power_user.personas).forEach((persona) => {
+        if (user_avatar === persona) {
+            return;
+        }
+        const descriptor = power_user.persona_descriptions[persona];
+        if (!descriptor) {
+            return;
+        }
+        if (descriptor.lorebook === oldName) {
+            descriptor.lorebook = newName;
+            saveSettingsDebounced();
+        }
+    });
+
+    // update the world info key to the new name if it's still set to the old one
+    if (chat_metadata[METADATA_KEY] === oldName) {
+        chat_metadata[METADATA_KEY] = newName;
+        await saveMetadata();
+    }
+
+    // find all characters using the old lorebook name as their primary world
+    const linkedChIDs = [];
+    characters.forEach((character, chid) => {
+        if (character.data?.extensions?.world === oldName) {
+            linkedChIDs.push(chid);
+        }
+    });
+
+    if (!linkedChIDs.length) {
+        return;
+    }
+
+    // Trigger the confirmation popup
+    const updatePastLinksConfirm = await Popup.show.confirm(
+        t`World/Lorebook renamed!`,
+        `<p>${t`Auxiliary Lorebook links have been updated. Would you like to update primary lorebook links for ${linkedChIDs.length} character(s) as well?`}</p>`,
+    ) == POPUP_RESULT.AFFIRMATIVE;
+
+    if (updatePastLinksConfirm) {
+        let activeCharacterUpdated = false;
+
+        for (const chid of linkedChIDs) {
+            const character = characters[chid];
+
+            try {
+                // /merge-attributes API call to update the file on the backend silently
+                const response = await fetch('/api/characters/merge-attributes', {
+                    method: 'POST',
+                    headers: getRequestHeaders(),
+                    body: JSON.stringify({
+                        avatar: character.avatar,
+                        data: {
+                            extensions: {
+                                world: newName,
+                            },
+                        },
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Merge API returned ${response.status}`);
+                }
+
+                // used to update the data in the browser's memory
+                await getOneCharacter(character.avatar);
+
+                // Flag if the currently open character was affected
+                if (String(chid) === String(this_chid)) {
+                    activeCharacterUpdated = true;
+                }
+
+                toastr.success(`Successfully updated link for ${character.name}.`);
+            } catch (e) {
+                toastr.error(`Failed to update link for ${character.name}.`);
+                console.error(`Backend update for character ${character.name} failed:`, e);
+            }
+        }
+
+        // update the UI fields
+        // only required if the currently selected character was changed
+        if (activeCharacterUpdated) {
+            select_selected_character(this_chid, { switchMenu: false });
+            setWorldInfoButtonClass(this_chid, true);
+        }
+    }
+}
+
+/**
  * Deletes a world info with the given name
  *
  * @param {string} worldInfoName - The name of the world info to delete
@@ -4426,16 +4346,6 @@ async function renameWorldInfo(name, data) {
 export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
-    }
-        // Check if user has permission to delete this lorebook
-    if (!isCurrentUserAdmin() && worldInfoName.startsWith('bb-') && !worldInfoName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
-        // Check if it's a botmaker lorebook that the current user is allowed to modify
-        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
-        if (!isAllowedBotmaker) {
-            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
-            toastr.error('You do not have permission to delete this lorebook');
-            return false;
-        }
     }
 
     const response = await fetch('/api/worldinfo/delete', {
@@ -4540,15 +4450,6 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
 
     if (!worldName) {
         return false;
-    }
-
-    // Check if the user is trying to create a lorebook with a protected prefix
-    const userHandle = getCurrentUserHandle();
-    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`)) {
-        if (!isCurrentUserAdmin()) {
-            toastr.error('You can only create loreBooks with your own username prefix');
-            return false;
-        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -6037,13 +5938,13 @@ export function openWorldInfoEditor(worldName) {
 
 /**
  * Assigns a lorebook to the current chat.
- * @param {JQuery.ClickEvent<Document, undefined, any, any>} event Pointer event
+ * @param {Pick<JQuery.ClickEvent, 'shiftKey' | 'altKey'>} event Click event
  * @returns {Promise<void>}
  */
-export async function assignLorebookToChat(event) {
+export async function assignLorebookToChat({ shiftKey, altKey }) {
     const selectedName = chat_metadata[METADATA_KEY];
 
-    if (selectedName && event.altKey) {
+    if (selectedName && !shiftKey && !altKey) {
         openWorldInfoEditor(selectedName);
         return;
     }
@@ -6415,14 +6316,17 @@ export function initWorldInfo() {
 
         const worldName = characters[chid]?.data?.extensions?.world;
         const hasEmbed = checkEmbeddedWorld(chid);
-        if (worldName && world_names.includes(worldName) && !event.shiftKey) {
+        if (worldName && world_names.includes(worldName) && !event.shiftKey && !event.altKey) {
             openWorldInfoEditor(worldName);
-        } else if (hasEmbed && !event.shiftKey) {
+        } else if (hasEmbed && !event.shiftKey && !event.altKey) {
             await importEmbeddedWorldInfo();
             saveCharacterDebounced();
         } else {
             openSetWorldMenu();
         }
+    });
+    addLongPressEvent('#world_button', function () {
+        $(this).trigger($.Event('click', { shiftKey: true }));
     });
 
     const debouncedWorldInfoSearch = debounce((searchQuery) => {
@@ -6445,6 +6349,14 @@ export function initWorldInfo() {
     });
 
     $(document).on('click', '.chat_lorebook_button', assignLorebookToChat);
+    addLongPressEvent('.chat_lorebook_button', function () {
+        assignLorebookToChat({ shiftKey: true, altKey: false });
+    });
+
+    $('#group-chat-lorebook-dropdown').on('change', async function () {
+        $(this).prop('selectedIndex', 0);
+        await assignLorebookToChat({ shiftKey: true, altKey: false });
+    });
 
     // Not needed on mobile
     if (!isMobile()) {

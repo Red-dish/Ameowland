@@ -4,6 +4,7 @@ import path from 'node:path';
 import express from 'express';
 import _ from 'lodash';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { getConfigValue, generateTimestamp, removeOldBackups } from '../util.js';
@@ -13,6 +14,10 @@ import { getFileNameValidationFunction } from '../middleware/validateFileName.js
 const ENABLE_EXTENSIONS = !!getConfigValue('extensions.enabled', true, 'boolean');
 const ENABLE_EXTENSIONS_AUTO_UPDATE = !!getConfigValue('extensions.autoUpdate', true, 'boolean');
 const ENABLE_ACCOUNTS = !!getConfigValue('enableUserAccounts', false, 'boolean');
+const ENABLE_REQUEST_COMPRESSION = !!getConfigValue('performance.requestCompression.enabled', false, 'boolean');
+const REQUEST_COMPRESSION_MIN = bytes.parse(getConfigValue('performance.requestCompression.minPayloadSize', '256kb'));
+const REQUEST_COMPRESSION_MAX = bytes.parse(getConfigValue('performance.requestCompression.maxPayloadSize', '8mb'));
+const REQUEST_COMPRESSION_TIMEOUT = Number(getConfigValue('performance.requestCompression.timeout', 3000, 'number'));
 
 // 10 minutes
 const AUTOSAVE_INTERVAL = 10 * 60 * 1000;
@@ -210,35 +215,6 @@ router.post('/save', function (request, response) {
     }
 });
 
-//ameow\
-router.get('/role', (request, response) => {
-    console.log('Request to /role:', {
-        user: request.user,
-        session: request.session,
-        cookies: request.headers.cookie
-    });
-    if (!request.user) {
-        return response.status(403).send({ error: 'User not authenticated', role: 'anonymous' });
-    }
-    const role = request.user.profile.admin ? 'admin' : 'user'; // Fixed to use profile.admin
-    return response.send({ role });
-});
-
-router.post('/save', function (request, response) {
-    try {
-        if (!request.user?.admin) {
-            return response.status(403).send({ error: 'Only admins can save settings' });
-        }
-        const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
-        writeFileAtomicSync(pathToSettings, JSON.stringify(request.body, null, 4), 'utf8');
-        triggerAutoSave(request.user.profile.handle);
-        response.send({ result: 'ok' });
-    } catch (err) {
-        console.error(err);
-        response.send(err);
-    }
-});
-
 // Wintermute's code
 router.post('/get', (request, response) => {
     let settings;
@@ -310,6 +286,12 @@ router.post('/get', (request, response) => {
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,
         enable_accounts: ENABLE_ACCOUNTS,
+        request_compression: {
+            enabled: ENABLE_REQUEST_COMPRESSION,
+            minPayloadSize: REQUEST_COMPRESSION_MIN || 0,
+            maxPayloadSize: REQUEST_COMPRESSION_MAX || 0,
+            timeout: REQUEST_COMPRESSION_TIMEOUT || 0,
+        },
     });
 });
 

@@ -23,6 +23,8 @@ import { toggle as slideToggle } from 'slidetoggle';
 import chalk from 'chalk';
 import yaml from 'yaml';
 import * as chevrotain from 'chevrotain';
+import { gzipSync, gzip } from 'fflate';
+import { sha256 } from 'js-sha256';
 
 /**
  * Expose the libraries to the 'window' object.
@@ -102,6 +104,9 @@ export default {
     chalk,
     yaml,
     chevrotain,
+    gzipSync,
+    gzip,
+    sha256,
 };
 
 export {
@@ -127,4 +132,7 @@ export {
     chalk,
     yaml,
     chevrotain,
+    gzipSync,
+    gzip,
+    sha256,
 };

@@ -1,5 +1,5 @@
 import { seedrandom, droll } from '../../../lib.js';
-import { chat_metadata, main_api, getMaxContextSize, extension_prompts, getCurrentChatId } from '../../../script.js';
+import { chat_metadata, main_api, getMaxPromptTokens, getMaxContextTokens, getMaxResponseTokens, extension_prompts, getCurrentChatId } from '../../../script.js';
 import { getStringHash, isFalseBoolean } from '../../utils.js';
 import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
 import { inject_ids } from '../../constants.js';
@@ -232,13 +232,34 @@ export function registerCoreMacros() {
         handler: () => (/** @type {HTMLTextAreaElement} */(document.querySelector('#send_textarea')))?.value ?? '',
     });
 
-    // {{maxPrompt}} -> max context size
+    // {{maxPrompt}} -> max context size (context minus response)
     MacroRegistry.registerMacro('maxPrompt', {
+        aliases: [{ alias: 'maxPromptTokens', visible: true }],
         category: MacroCategory.STATE,
         description: 'Maximum prompt context size.',
         returns: 'Maximum prompt context size.',
         returnType: MacroValueType.INTEGER,
-        handler: () => String(getMaxContextSize()),
+        handler: () => String(getMaxPromptTokens()),
+    });
+
+    // {{maxContext}} -> max context token limit
+    MacroRegistry.registerMacro('maxContext', {
+        aliases: [{ alias: 'maxContextTokens', visible: true }],
+        category: MacroCategory.STATE,
+        description: 'Maximum context token limit.',
+        returns: 'Maximum context token limit.',
+        returnType: MacroValueType.INTEGER,
+        handler: () => String(getMaxContextTokens()),
+    });
+
+    // {{maxResponse}} -> max response token limit
+    MacroRegistry.registerMacro('maxResponse', {
+        aliases: [{ alias: 'maxResponseTokens', visible: true }],
+        category: MacroCategory.STATE,
+        description: 'Maximum response token limit.',
+        returns: 'Maximum response token limit.',
+        returnType: MacroValueType.INTEGER,
+        handler: () => String(getMaxResponseTokens()),
     });
 
     // String utilities
@@ -268,8 +289,8 @@ export function registerCoreMacros() {
                 description: 'Any kind of text as comment. If you want multiline comments, consider using a scoped macro like {{//}}First\nSecond{{///}}.',
             },
         ],
-        list: true,         // We consume any arguments as if this is a list, but we'll ignore them in the handler anyway
-        strictArgs: false,  // and we also always remove it, even if the parsing might say it's invalid
+        // list: true,         // We consume any arguments as if this is a list, but we'll ignore them in the handler anyway
+        // strictArgs: false,  // and we also always remove it, even if the parsing might say it's invalid
         description: 'Comment macro that produces an empty string. Can be used for writing into prompt definitions, without being passed to the context.',
         returns: '',
         displayOverride: '{{// ...}}',

@@ -26,7 +26,7 @@ SillyTavern 为众多 LLM API（KoboldAI/CPP、Horde、NovelAI、Ooba、Tabby、
 
 SillyTavern（简称 ST）是一个本地安装的用户界面，允许您与文本生成 LLM、图像生成引擎和 TTS 语音模型进行交互。
 
-SillyTavern 于 2023 年 2 月作为 TavernAI 1.2.8 的一个分支开始，如今已拥有超过 200 名贡献者和 2 年的独立开发经验，并继续作为资深 AI 爱好者领先的软件。
+SillyTavern 于 2023 年 2 月作为 TavernAI 1.2.8 的一个分支开始，如今已拥有超过 300 名贡献者和 3 年的独立开发经验，并继续作为资深 AI 爱好者领先的软件。
 
 ## 我们的愿景
 
@@ -36,7 +36,7 @@ SillyTavern 于 2023 年 2 月作为 TavernAI 1.2.8 的一个分支开始，如�
 
 ## 我需要一台性能强大的电脑来运行 SillyTavern 吗？
 
-硬件要求很低：任何可以运行 NodeJS 18 或更高版本的设备都可以运行它。如果您打算在本地计算机上进行 LLM 推理，我们建议使用至少具有 6GB VRAM 的 3000 系列 NVIDIA 显卡，但实际要求可能会根据模型和您使用的后端而有所不同。
+硬件要求很低：任何可以运行 NodeJS 20 或更高版本的设备都可以运行它。如果您打算在本地计算机上进行 LLM 推理，我们建议使用至少具有 6GB VRAM 的 3000 系列 NVIDIA 显卡，但实际要求可能会根据模型和您使用的后端而有所不同。
 
 ## 有问题或建议？
 
@@ -79,6 +79,7 @@ SillyTavern 于 2023 年 2 月作为 TavernAI 1.2.8 的一个分支开始，如�
 * CncAnon 的 TavernAITurbo mod 的部分内容经许可使用
 * 视觉小说模式的灵感来自 PepperTaco 的工作 (<https://github.com/peppertaco/Tavern/>)
 * Noto Sans 字体 by Google (OFL 许可证)
+* Lexer/Parser 由 Chevrotain 提供 (Apache-2.0 许可证) <https://github.com/chevrotain/chevrotain>
 * 图标主题 by Font Awesome <https://fontawesome.com> (图标: CC BY 4.0, 字体: SIL OFL 1.1, 代码: MIT 许可证)
 * 默认内容由 @OtisAlejandro (Seraphina 角色和世界书) 和 @kallmeflocc (10K Discord 用户庆祝背景) 提供
 * Docker 指南由 [@mrguymiah](https://github.com/mrguymiah) 和 [@Bronya-Rand](https://github.com/Bronya-Rand) 提供

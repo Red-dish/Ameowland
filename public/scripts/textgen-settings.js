@@ -23,7 +23,7 @@ import { power_user, registerDebugFunction } from './power-user.js';
 import { getActiveManualApiSamplers, loadApiSelectedSamplers, isSamplerManualPriorityEnabled } from './samplerSelect.js';
 import { SECRET_KEYS, writeSecret } from './secrets.js';
 import { getEventSourceStream } from './sse-stream.js';
-import { getCurrentDreamGenModelTokenizer, getCurrentOpenRouterModelTokenizer, loadAphroditeModels, loadDreamGenModels, loadFeatherlessModels, loadGenericModels, loadInfermaticAIModels, loadLlamaCppModels, loadMancerModels, loadOllamaModels, loadOpenRouterModels, loadTabbyModels, loadTogetherAIModels, loadVllmModels } from './textgen-models.js';
+import { getCurrentDreamGenModelTokenizer, getCurrentOpenRouterModelTokenizer, loadAphroditeModels, loadDreamGenModels, loadFeatherlessModels, loadGenericModels, loadInfermaticAIModels, loadLlamaCppModels, loadMancerModels, loadOllamaModels, loadOpenRouterModels, loadTabbyModels, loadTogetherAIModels, loadVllmModels, updateOpenRouterProvidersWarning } from './textgen-models.js';
 import { ENCODE_TOKENIZERS, TEXTGEN_TOKENIZERS, TOKENIZER_SUPPORTED_KEY, getTextTokens, getTokenizerBestMatch, tokenizers } from './tokenizers.js';
 import { AbortReason } from './util/AbortReason.js';
 import { getSortableDelay, onlyUnique, arraysEqual, isObject } from './utils.js';
@@ -93,6 +93,7 @@ const OOBA_DEFAULT_ORDER = [
     'tfs',
     'top_a',
     'min_p',
+    'adaptive_p',
     'mirostat',
     'xtc',
     'encoder_repetition_penalty',
@@ -1069,7 +1070,12 @@ export function initTextGenSettings() {
 
         textgenerationwebui_settings.openrouter_providers = selectedProviders;
 
+        updateOpenRouterProvidersWarning('#openrouter_providers_text');
         saveSettingsDebounced();
+    });
+
+    $('#openrouter_allow_fallbacks_textgenerationwebui').on('input', function () {
+        updateOpenRouterProvidersWarning('#openrouter_providers_text');
     });
 
     $('#openrouter_quantizations_text').on('change', function () {
@@ -1751,6 +1757,7 @@ export function createTextGenGenerationData(settings, model, finalPrompt = null,
 
     if (settings.type === KOBOLDCPP) {
         params.grammar = settings.grammar_string || undefined;
+        params.grammar_retain_state = (settings.grammar_string && !!isContinue) ? true : undefined;
         params.trim_stop = true;
         params.dry_sequence_breakers = params.parseSequenceBreakers();
     }

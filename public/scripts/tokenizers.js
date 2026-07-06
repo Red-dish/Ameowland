@@ -7,8 +7,9 @@ import { getStringHash } from './utils.js';
 import { kai_flags, kai_settings } from './kai-settings.js';
 import { textgen_types, textgenerationwebui_settings as textgen_settings, getTextGenServer, getTextGenModel } from './textgen-settings.js';
 import { getCurrentDreamGenModelTokenizer, getCurrentOpenRouterModelTokenizer, openRouterModels } from './textgen-models.js';
+export { BYTES_PER_TOKEN as CHARACTERS_PER_TOKEN_RATIO };
 
-export const CHARACTERS_PER_TOKEN_RATIO = 3.35;
+export const BYTES_PER_TOKEN = 3.35;
 export const TOKENIZER_WARNING_KEY = 'tokenizationWarningShown';
 export const TOKENIZER_SUPPORTED_KEY = 'tokenizationSupported';
 
@@ -152,6 +153,7 @@ const TOKENIZER_URLS = {
     },
 };
 
+const textEncoder = new TextEncoder();
 const objectStore = localforage.createInstance({ name: 'SillyTavern_ChatCompletions' });
 
 let tokenCache = {};
@@ -162,7 +164,8 @@ let tokenCache = {};
  * @returns {number} Token count.
  */
 export function guesstimate(str) {
-    return Math.ceil(str.length / CHARACTERS_PER_TOKEN_RATIO);
+    const byteLength = textEncoder.encode(str).length;
+    return Math.ceil(byteLength / BYTES_PER_TOKEN);
 }
 
 async function loadTokenCache() {
@@ -549,7 +552,7 @@ export function getTokenCount(str, padding = undefined) {
  * @deprecated Use counterWrapperOpenAIAsync instead.
  */
 function counterWrapperOpenAI(text) {
-    const message = { role: 'system', content: text };
+    const message = { content: text };
     return countTokensOpenAI(message, true);
 }
 
@@ -559,7 +562,7 @@ function counterWrapperOpenAI(text) {
  * @returns {Promise<number>} Token count.
  */
 function counterWrapperOpenAIAsync(text) {
-    const message = { role: 'system', content: text };
+    const message = { content: text };
     return countTokensOpenAIAsync(message, true);
 }
 
@@ -691,6 +694,33 @@ export function getTokenizerModel() {
         }
     }
 
+    if (oai_settings.chat_completion_source == chat_completion_sources.MINIMAX) {
+        // MiniMax uses a proprietary tokenizer; fall back to a coarse OpenAI estimation.
+        return 'gpt-3.5-turbo';
+    }
+
+    if (oai_settings.chat_completion_source == chat_completion_sources.WORKERS_AI && oai_settings.workers_ai_model) {
+        const model = oai_settings.workers_ai_model.toLowerCase();
+
+        if (model.includes('deepseek')) {
+            return deepseekTokenizer;
+        } else if (model.includes('qwen') || model.includes('qwq') || model.includes('kimi')) {
+            return qwen2Tokenizer;
+        } else if (model.includes('llama-3') || model.includes('llama-4')) {
+            return llama3Tokenizer;
+        } else if (model.includes('llama')) {
+            return llamaTokenizer;
+        } else if (model.includes('gemma')) {
+            return gemmaTokenizer;
+        } else if (model.includes('mistral')) {
+            return mistralTokenizer;
+        } else if (model.includes('phi')) {
+            return turboTokenizer;
+        } else if (model.includes('gpt-oss')) {
+            return gpt4oTokenizer;
+        }
+    }
+
     if (oai_settings.chat_completion_source == chat_completion_sources.COHERE) {
         if (oai_settings.cohere_model.includes('command-a')) {
             return commandATokenizer;
@@ -771,7 +801,7 @@ export function countTokensOpenAI(messages, full = false) {
         messages = [messages];
     }
 
-    let token_count = -1;
+    let token_count = 0;
 
     for (const message of messages) {
         const model = getTokenizerModel();
@@ -821,7 +851,7 @@ export async function countTokensOpenAIAsync(messages, full = false) {
         messages = [messages];
     }
 
-    let token_count = -1;
+    let token_count = 0;
 
     for (const message of messages) {
         const model = getTokenizerModel();
@@ -951,8 +981,7 @@ function getTextgenAPITokenizationParams(str) {
         text: str,
         api_type: textgen_settings.type,
         url: getTextGenServer(),
-        vllm_model: textgen_settings.vllm_model,
-        aphrodite_model: textgen_settings.aphrodite_model,
+        model: getTextGenModel(),
     };
 }
 
