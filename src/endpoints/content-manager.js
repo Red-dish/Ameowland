@@ -556,6 +556,11 @@ async function downloadPygmalionCharacter(id) {
  */
 function parseChubUrl(str) {
     const splitStr = str.split('/');
+    const length = splitStr.length;
+
+    if (length < 2) {
+        return null;
+    }
 
     let domainIndex = -1;
 
@@ -565,25 +570,20 @@ function parseChubUrl(str) {
         }
     });
 
-    const cleanUrl = domainIndex !== -1 ? splitStr.slice(domainIndex + 1) : splitStr;
-    const length = cleanUrl.length;
+    const lastTwo = domainIndex !== -1 ? splitStr.slice(domainIndex + 1) : splitStr;
 
-    if (length < 2) {
-        return null;
-    }
-
-    const firstPart = cleanUrl[0].toLowerCase();
+    const firstPart = lastTwo[0].toLowerCase();
 
     if (firstPart === 'characters' || firstPart === 'lorebooks') {
         const type = firstPart === 'characters' ? 'character' : 'lorebook';
-        const id = type === 'character' ? cleanUrl.slice(1).join('/') : cleanUrl.join('/');
+        const id = type === 'character' ? lastTwo.slice(1).join('/') : lastTwo.join('/');
         return {
             id: id,
             type: type,
         };
     } else if (length === 2) {
         return {
-            id: cleanUrl.join('/'),
+            id: lastTwo.join('/'),
             type: 'character',
         };
     }

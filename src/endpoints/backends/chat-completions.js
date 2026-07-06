@@ -20,7 +20,6 @@ import {
     SILICONFLOW_ENDPOINT,
     MINIMAX_ENDPOINT,
     ZAI_ENDPOINT,
-    POLLINATIONS_ENDPOINT,
 } from '../../constants.js';
 import {
     forwardFetchResponse,
@@ -84,7 +83,6 @@ const API_DEEPSEEK = 'https://api.deepseek.com/beta';
 const API_XAI = 'https://api.x.ai/v1';
 const API_AIMLAPI = 'https://api.aimlapi.com/v1';
 const API_POLLINATIONS = 'https://gen.pollinations.ai/v1';
-const API_POLLINATIONS_ANON = 'https://text.pollinations.ai/v1';
 const API_MOONSHOT = 'https://api.moonshot.ai/v1';
 const API_FIREWORKS = 'https://api.fireworks.ai/inference/v1';
 const API_COMETAPI = 'https://api.cometapi.com/v1';
@@ -1791,9 +1789,8 @@ router.post('/status', async function (request, statusResponse) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.AIMLAPI, request.body.secret_id);
             headers = { ...AIMLAPI_HEADERS };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.POLLINATIONS) {
-            const isAnonymous = request.body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
             apiUrl = 'https://gen.pollinations.ai/text';
-            apiKey = isAnonymous ? 'anonymous' : readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, request.body.secret_id);
+            apiKey = readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.GROQ) {
             apiUrl = API_GROQ;
@@ -2417,23 +2414,20 @@ router.post('/generate', async function (request, response) {
                 };
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.POLLINATIONS) {
-            const isAnonymous = request.body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
-            apiUrl = isAnonymous ? API_POLLINATIONS_ANON : API_POLLINATIONS;
-            apiKey = isAnonymous ? 'anonymous' : readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, request.body.secret_id);
+            apiUrl = API_POLLINATIONS;
+            apiKey = readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, request.body.secret_id);
             headers = {};
             bodyParams = {
+                reasoning_effort: request.body.reasoning_effort,
                 seed: request.body.seed ?? Math.floor(Math.random() * 99999999),
             };
-            if (!isAnonymous) {
-                bodyParams['reasoning_effort'] = request.body.reasoning_effort;
-                if (request.body.json_schema) {
-                    bodyParams['response_format'] = {
-                        type: 'json_schema',
-                        json_schema: {
-                            schema: request.body.json_schema.value,
-                        },
-                    };
-                }
+            if (request.body.json_schema) {
+                bodyParams['response_format'] = {
+                    type: 'json_schema',
+                    json_schema: {
+                        schema: request.body.json_schema.value,
+                    },
+                };
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MOONSHOT) {
             apiUrl = new URL(request.body.reverse_proxy || API_MOONSHOT).toString();

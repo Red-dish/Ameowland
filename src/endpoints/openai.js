@@ -8,7 +8,6 @@ import express from 'express';
 import { getConfigValue, mergeObjectWithYaml, excludeKeysByYaml, trimV1, delay } from '../util.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
-import { POLLINATIONS_ENDPOINT } from '../constants.js';
 import { AIMLAPI_HEADERS, OPENROUTER_HEADERS, SILICONFLOW_ENDPOINT, ZAI_ENDPOINT } from '../constants.js';
 
 export const router = express.Router();
@@ -99,8 +98,7 @@ router.post('/caption-image', async (request, response) => {
         }
 
         if (request.body.api === 'pollinations') {
-            const isAnonymous = request.body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
-            key = isAnonymous ? 'anonymous' : readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS);
+            key = readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS);
             bodyParams.seed = Math.floor(Math.random() * Math.pow(2, 32));
         }
 
@@ -184,8 +182,7 @@ router.post('/caption-image', async (request, response) => {
         }
 
         if (request.body.api === 'pollinations') {
-            const isAnonymous = request.body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
-            apiUrl = isAnonymous ? 'https://text.pollinations.ai/v1/chat/completions' : 'https://gen.pollinations.ai/v1/chat/completions';
+            apiUrl = 'https://gen.pollinations.ai/v1/chat/completions';
         }
 
         if (request.body.api === 'moonshot' && !request.body.reverse_proxy) {
