@@ -209,6 +209,8 @@ export const CHAT_COMPLETION_SOURCES = {
     AZURE_OPENAI: 'azure_openai',
     ZAI: 'zai',
     SILICONFLOW: 'siliconflow',
+    MINIMAX: 'minimax',
+    WORKERS_AI: 'workers_ai',
 };
 
 /**
@@ -476,10 +478,27 @@ export const OPENAI_REASONING_EFFORT_MODELS = [
     'gpt-5.2',
     'gpt-5.2-2025-12-11',
     'gpt-5.2-chat-latest',
+    'gpt-5.3-chat-latest',
+    'gpt-5.4',
+    'gpt-5.4-2026-03-05',
+    'gpt-5.4-mini',
+    'gpt-5.4-mini-2026-03-17',
+    'gpt-5.4-nano',
+    'gpt-5.4-nano-2026-03-17',
+    'gpt-5.5',
+    'gpt-5.5-2026-04-23',
 ];
 
 export const OPENAI_REASONING_EFFORT_MAP = {
     min: 'minimal',
+};
+
+/**
+ * Models that only accept a single fixed reasoning effort value.
+ * @type {Record<string, string>}
+ */
+export const OPENAI_FIXED_REASONING_EFFORT = {
+    'gpt-5.3-chat-latest': 'medium',
 };
 
 export const NANOGPT_REASONING_EFFORT_MAP = {
@@ -540,4 +559,14 @@ export const MEDIA_REQUEST_TYPE = {
 export const ZAI_ENDPOINT = {
     COMMON: 'common',
     CODING: 'coding',
+};
+
+export const SILICONFLOW_ENDPOINT = {
+    GLOBAL: 'global',
+    CN: 'cn',
+};
+
+export const MINIMAX_ENDPOINT = {
+    GLOBAL: 'global',
+    CN: 'cn',
 };

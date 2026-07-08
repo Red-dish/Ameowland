@@ -15,6 +15,7 @@
 @import url(css/secrets.css);
 @import url(css/backgrounds.css);
 @import url(css/chat-backups.css);
+@import url(css/streaming-display.css);
 
 :root {
     interpolate-size: allow-keywords;
@@ -701,11 +702,6 @@ small {
     margin: 0;
 }
 
-.mes.smallSysMes .swipe_right,
-.mes.smallSysMes .swipe_left {
-    display: none !important;
-}
-
 .mes.smallSysMes .mes_text {
     padding: 0 !important;
     text-align: center;
@@ -768,56 +764,6 @@ hr {
     min-height: 1px;
     border: 0;
     opacity: 0.2;
-}
-
-#bg1,
-#bg_custom {
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-    background-size: cover;
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    transition: background-image var(--animation-duration-3x) ease-in-out;
-}
-
-/* Background fitting options */
-#background_fitting {
-    max-width: 6em;
-}
-
-/* Fill/Cover - scales to fill width while maintaining aspect ratio */
-#bg1.cover,
-#bg_custom.cover {
-    background-size: cover;
-    background-position: center;
-}
-
-/* Fit/Contain - shows entire image maintaining aspect ratio */
-#bg1.contain,
-#bg_custom.contain {
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-
-/* Stretch - stretches to fill entire space */
-#bg1.stretch,
-#bg_custom.stretch {
-    background-size: 100% 100%;
-}
-
-/* Center - centers without scaling */
-#bg1.center,
-#bg_custom.center {
-    background-size: auto;
-    background-position: center;
-    background-repeat: no-repeat;
-}
-
-body.reduced-motion #bg1,
-body.reduced-motion #bg_custom {
-    transition: none;
 }
 
 #version_display {
@@ -1364,6 +1310,29 @@ body .panelControlBar {
     margin-bottom: var(--swipeCounterMargin);
     height: var(--swipeCounterHeight);
     pointer-events: auto;
+}
+
+.swipes-counter.swipe-picker-enabled {
+    cursor: pointer;
+}
+
+.swipes-counter.swipe-picker-enabled:hover,
+.swipes-counter.swipe-picker-enabled:focus-visible {
+    opacity: 0.7;
+}
+
+.swipe_picker_header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.swipe_picker_popup .popup-body,
+.swipe_picker_popup .popup-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
 
@@ -3129,6 +3098,10 @@ select option:not(:checked) {
     color: var(--white70a);
 }
 
+select option[disabled]:not(:checked) {
+    color: var(--white30a);
+}
+
 /*#######################################################################*/
 
 #rm_api_block {
@@ -3146,6 +3119,7 @@ select option:not(:checked) {
     text-align: center;
 }
 
+.menu_button[disabled],
 .menu_button.disabled {
     filter: brightness(75%) grayscale(1);
     opacity: 0.5;
@@ -3205,6 +3179,11 @@ select option:not(:checked) {
 
 #api_url_text {
     display: block;
+}
+
+/* Fix font size difference in API Connections dropdowns - Issue #4599 */
+#custom_model_id {
+    font-size: calc(var(--mainFontSize) * 0.95);
 }
 
 .menu_button.api_button:hover {
@@ -4044,7 +4023,7 @@ grammarly-extension {
 
 
 /* Override toastr default styles */
-body>#toast-container {
+body #toast-container {
     margin-top: var(--topBarBlockSize);
 }
 
@@ -4055,6 +4034,10 @@ body #toast-container>div {
     padding: 10px 10px 10px 50px;
     font-size: calc(var(--mainFontSize) * 0.95);
     width: 300px;
+}
+
+body #toast-container .toast.toast-non-interactable {
+    cursor: default;
 }
 
 body #toast-container .toast-success {
@@ -4821,12 +4804,62 @@ h5 {
     padding: 5px 7px;
 }
 
-.select_chat_block:hover {
+.select_chat_block:hover,
+.swipe_picker_block:hover {
     background-color: var(--white30a);
 }
 
-.select_chat_block[highlight] {
+.select_chat_block[highlight],
+.swipe_picker_block[highlight] {
     background-color: var(--cobalt30a);
+}
+
+.swipe_picker_block {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.swipe_picker_block .select_chat_block_mes {
+    text-align: left;
+}
+
+.swipe_picker_block .select_chat_actions {
+    align-items: baseline;
+}
+
+.swipe_picker_expand_toggle {
+    display: none !important;
+}
+
+.swipe_picker_block:has(.swipe_picker_expand_toggle:checked) .select_chat_block_mes {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.swipe_picker_expand_label {
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.swipe_picker_expand_label:hover {
+    opacity: 1;
+}
+
+.swipe_picker_copy {
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.swipe_picker_copy:hover {
+    opacity: 1;
+}
+
+.swipe_picker_block:has(.swipe_picker_expand_toggle:checked) .swipe_picker_expand_label {
+    transform: rotate(180deg);
 }
 
 .select_chat_block .avatar {
@@ -4870,6 +4903,20 @@ h5 {
     filter: drop-shadow(0 0 2px red);
     -webkit-animation: infinite-spinning 1s ease-out 0s infinite normal;
     animation: infinite-spinning 1s ease-out 0s infinite normal;
+}
+
+.swipe_picker_delete.disabled {
+    cursor: default !important;
+    opacity: 0.2;
+}
+
+.swipe_picker_delete.disabled:hover {
+    cursor: default !important;
+    color: inherit;
+    filter: none;
+    -webkit-animation: none;
+    animation: none;
+    opacity: 0.2 !important;
 }
 
 #export_character_div {
@@ -6064,6 +6111,11 @@ body:not(.movingUI) .drawer-content.maximized {
     width: fit-content;
     border-radius: 10px;
     outline: 1px solid var(--SmartThemeBorderColor);
+    transition: filter var(--animation-duration-2x) ease-in-out;
+}
+
+#show_more_messages:hover {
+    filter: brightness(1.25);
 }
 
 .draggable img {
@@ -6390,6 +6442,38 @@ body:not(.movingUI) .drawer-content.maximized {
 .info-block.error {
     border-color: var(--error-color, #e87f7f);
     background-color: rgba(241, 163, 163, 0.2);
+}
+
+.nanogpt_info_btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.8em;
+    min-height: 1.8em;
+    margin-left: 0.15em;
+    vertical-align: middle;
+}
+
+.nanogpt-credits-popup {
+    display: grid;
+    gap: 0.25em 1em;
+    grid-template-columns: max-content minmax(0, 1fr);
+    text-align: left;
+}
+
+.nanogpt-credits-popup h3 {
+    grid-column: 1 / -1;
+    margin: 0 0 0.25em;
+}
+
+.nanogpt-credits-popup div:nth-of-type(odd) {
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.nanogpt-credits-popup div:nth-of-type(even) {
+    font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 @media (prefers-contrast: more) {

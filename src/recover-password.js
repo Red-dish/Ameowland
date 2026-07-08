@@ -34,7 +34,7 @@ export async function recoverPassword(configPath, userAccount, userPassword) {
     await initStorage(configPath);
 
     /**
-     * @type {import('./users').User}
+     * @type {import('./users.js').User}
      */
     const user = await storage.get(toKey(userAccount));
 

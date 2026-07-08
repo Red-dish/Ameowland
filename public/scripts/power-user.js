@@ -68,6 +68,7 @@ import { bindModelTemplates } from './chat-templates.js';
 import { IMAGE_OVERSWIPE, MEDIA_DISPLAY } from './constants.js';
 import { t } from './i18n.js';
 import { getBackgroundPath, isCustomBackgroundUrl } from './backgrounds.js';
+import { persona_description_positions as _persona_description_positions } from './personas.js';
 
 export const toastPositionClasses = [
     'toast-top-left',
@@ -110,17 +111,7 @@ export const send_on_enter_options = {
     ENABLED: 1,
 };
 
-export const persona_description_positions = {
-    IN_PROMPT: 0,
-    /**
-     * @deprecated Use persona_description_positions.IN_PROMPT instead.
-     */
-    AFTER_CHAR: 1,
-    TOP_AN: 2,
-    BOTTOM_AN: 3,
-    AT_DEPTH: 4,
-    NONE: 9,
-};
+export const persona_description_positions = _persona_description_positions;
 
 export const power_user = {
     spoiler_free_mode: true,
@@ -199,10 +190,10 @@ export const power_user = {
     show_group_chat_queue: false,
     allow_name1_display: false,
     allow_name2_display: false,
-    hotswap_enabled: true,
+    hotswap_enabled: false,
     timer_enabled: true,
     timestamps_enabled: true,
-    timestamp_model_icon: false,
+    timestamp_model_icon: true,
     mesIDDisplay_enabled: true,
     hideChatAvatars_enabled: false,
     max_context_unlocked: false,
@@ -214,7 +205,7 @@ export const power_user = {
     prefer_character_jailbreak: true,
     quick_continue: false,
     quick_impersonate: false,
-    continue_on_send: false,
+    continue_on_send: true,
     trim_spaces: true,
     relaxed_api_urls: false,
     world_import_dialog: true,
@@ -287,9 +278,9 @@ export const power_user = {
         add_to_prompts: false,
         auto_expand: false,
         show_hidden: false,
-        prefix: '<think>\n',
-        suffix: '\n</think>',
-        separator: '\n\n',
+        prefix: '<think>',
+        suffix: '</think>',
+        separator: '\n',
         max_additions: 1,
     },
 
@@ -309,7 +300,7 @@ export const power_user = {
     custom_stopping_strings_macro: true,
     fuzzy_search: false,
     encode_tags: false,
-    experimental_macro_engine: false,
+    experimental_macro_engine: true,
     servers: [],
     bogus_folders: false,
     zoomed_avatar_magnification: false,
@@ -342,7 +333,7 @@ export const power_user = {
     compact_input_area: true,
     show_swipe_num_all_messages: false,
     auto_connect: false,
-    auto_load_chat: false,
+    auto_load_chat: true,
     forbid_external_media: true,
     external_media_allowed_overrides: [],
     external_media_forbidden_overrides: [],

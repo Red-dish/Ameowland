@@ -704,14 +704,11 @@ export function getImages(directoryPath, sortBy = 'name', type = MEDIA_REQUEST_T
  * Pipe a fetch() response to an Express.js Response, including status code.
  * @param {import('node-fetch').Response} from The Fetch API response to pipe from.
  * @param {import('express').Response} to The Express response to pipe to.
+ * @returns {Promise<void>}
  */
-export function forwardFetchResponse(from, to) {
+export async function forwardFetchResponse(from, to) {
     let statusCode = from.status;
     let statusText = from.statusText;
-
-    if (!from.ok) {
-        console.warn(`Streaming request failed with status ${statusCode} ${statusText}`);
-    }
 
     // Avoid sending 401 responses as they reset the client Basic auth.
     // This can produce an interesting artifact as "400 Unauthorized", but it's not out of spec.
@@ -724,6 +721,21 @@ export function forwardFetchResponse(from, to) {
 
     to.statusCode = statusCode;
     to.statusMessage = statusText;
+
+    if (!from.ok) {
+        try {
+            const rawErrorText = await from.text();
+            const detail = rawErrorText || 'Unknown error occurred';
+
+            console.warn(`Streaming request failed with status ${from.status} ${statusText}: ${detail}`);
+            to.end(rawErrorText, 'utf-8');
+        } catch {
+            console.warn(`Streaming request failed with status ${from.status} ${statusText}: Unknown error occurred`);
+            to.end();
+        }
+
+        return;
+    }
 
     if (from.body && to.socket) {
         from.body.pipe(to);
@@ -962,24 +974,6 @@ export function isValidUrl(url) {
     } catch (error) {
         return false;
     }
-}
-
-/**
- * Checks if the given URL is blocked by the server configuration.
- * @param {string} url URL to check
- * @returns {boolean} If the URL is blocked
- */
-export function isBlockedApiUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    const blockedEndpoints = getConfigValue('blockedApiEndpoints', [
-        'https://api.voidai.app',
-        'https://beta.voidai.app',
-    ]);
-    if (!Array.isArray(blockedEndpoints)) return false;
-    const normalizedUrl = url.toLowerCase();
-    return blockedEndpoints.some(blocked =>
-        typeof blocked === 'string' && normalizedUrl.startsWith(blocked.toLowerCase())
-    );
 }
 
 /**
@@ -1393,7 +1387,7 @@ export function isPathUnderParent(parentPath, childPath) {
 
     const relativePath = path.relative(normalizedParent, normalizedChild);
 
-    return !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+    return relativePath !== '..' && !relativePath.startsWith('..' + path.sep) && !path.isAbsolute(relativePath);
 }
 
 /**

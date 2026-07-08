@@ -5,10 +5,10 @@ import crypto from 'node:crypto';
 import storage from 'node-persist';
 import express from 'express';
 
-import { getUserAvatar, toKey, getPasswordHash, getPasswordSalt, createBackupArchive, ensurePublicDirectoriesExist, toAvatarKey } from '../users.js';
+import { getUserAvatar, toKey, getPasswordHash, getPasswordSalt, createBackupArchive, ensurePublicDirectoriesExist, toAvatarKey, getAccountVersion } from '../users.js';
 import { SETTINGS_FILE } from '../constants.js';
 import { checkForNewContent, CONTENT_TYPES } from './content-manager.js';
-import { color, Cache } from '../util.js';
+import { color, Cache, getConfigValue } from '../util.js';
 
 const RESET_CACHE = new Cache(5 * 60 * 1000);
 
@@ -23,6 +23,7 @@ router.post('/logout', async (request, response) => {
 
         request.session.handle = null;
         request.session.csrfToken = null;
+        request.session.version = null;
         request.session = null;
         return response.sendStatus(204);
     } catch (error) {
@@ -129,6 +130,12 @@ router.post('/change-password', async (request, response) => {
         }
 
         await storage.setItem(toKey(request.body.handle), user);
+
+        // Update session version to keep the current session valid after password change
+        if (request.session && request.session.handle === user.handle) {
+            request.session.version = getAccountVersion(user);
+        }
+
         return response.sendStatus(204);
     } catch (error) {
         console.error(error);
@@ -138,6 +145,13 @@ router.post('/change-password', async (request, response) => {
 
 router.post('/backup', async (request, response) => {
     try {
+        const allowFullDataBackup = !!getConfigValue('backups.allowFullDataBackup', true, 'boolean');
+
+        if (!allowFullDataBackup) {
+            console.warn('Backup failed: Full data backup is disabled in configuration');
+            return response.status(403).json({ error: 'Full data backup is disabled' });
+        }
+
         const handle = request.body.handle;
 
         if (!handle) {
