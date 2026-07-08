@@ -15,6 +15,8 @@ import { t } from './i18n.js';
 import { stopGeneration } from '../script.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 
+const LOADER_MESSAGES = ['Cooking', 'Loading', 'Gooning', 'Ameowing', 'Almost there', 'Skidaddling', 'Booting up', 'Warming up', 'Purring', 'Chasing mice', 'Sharpening claws', 'Stretching', 'Napping', 'Yawning', 'Pouncing on bugs'];
+
 /**
  * Enum representing the toast display mode for the action loader.
  * @readonly
@@ -528,25 +530,28 @@ function isOverlayDisplayed() {
  * @param {HTMLElement|string|null} [customContent] - Custom content for the overlay
  */
 function showOverlay(customContent = null) {
+
+    const content = getOverlayContent(customContent);
     // Two loaders don't make sense. Don't await, we can overlay the old loader while it closes
     if (loaderPopup) loaderPopup.complete(POPUP_RESULT.CANCELLED);
 
-    const content = getOverlayContent(customContent);
+    const message = LOADER_MESSAGES[Math.floor(Math.random() * LOADER_MESSAGES.length)];
 
-    loaderPopup = new Popup(content, POPUP_TYPE.DISPLAY, null, {
-        allowEscapeClose: false,
-        transparent: true,
-        animation: 'none',
-        wide: true,
-        large: true,
-    });
+    loaderPopup = new Popup(`
+        <div id="loader">
+            <div id="load-spinner">
+                <div id="loader-text">${message}</div>
+                <div id="loader-cats">
+                    <span class="cat-slider"><span class="pixel-cat"></span></span>
+                </div>
+            </div>
+        </div>`, POPUP_TYPE.DISPLAY, null, { transparent: true, animation: 'none', wide: true, large: true });
 
     // No close button, loaders are not closable
     loaderPopup.closeButton.style.display = 'none';
 
     loaderPopup.show();
 }
-
 /**
  * Hides the blocking loader overlay with animation.
  * Internal function - use hideActionLoader() instead.
