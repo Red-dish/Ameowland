@@ -596,7 +596,7 @@ async function processFiles(chat) {
             const allFileText = String(message.mes || '').substring(0, message.extra.fileLength).trim();
 
             // Convert kilobytes to string length
-            const thresholdLength = settings.size_threshold * 1024;
+            const thresholdLength = settings.size_threshold * 500000;
 
             // File is too small
             if (allFileText.length < thresholdLength) {
@@ -660,7 +660,7 @@ async function ingestDataBankAttachments(source) {
         const fileText = await getFileAttachment(file.url);
         console.log(`Vectors: Retrieved file ${file.name} from Data Bank`);
         // Convert kilobytes to string length
-        const thresholdLength = settings.size_threshold_db * 1024;
+        const thresholdLength = settings.size_threshold_db * 500000;
         // Use chunk size from settings if file is larger than threshold
         const chunkSize = file.size > thresholdLength ? settings.chunk_size_db : -1;
         await vectorizeFile(fileText, file.name, collectionId, chunkSize, settings.overlap_percent_db);
@@ -1540,13 +1540,13 @@ async function onVectorizeAllFilesClick() {
         function getChunkSize(file) {
             if (chatAttachments.includes(file)) {
                 // Convert kilobytes to string length
-                const thresholdLength = settings.size_threshold * 1024;
+                const thresholdLength = settings.size_threshold * 500000;
                 return file.size > thresholdLength ? settings.chunk_size : -1;
             }
 
             if (dataBank.includes(file)) {
                 // Convert kilobytes to string length
-                const thresholdLength = settings.size_threshold_db * 1024;
+                const thresholdLength = settings.size_threshold_db * 500000;
                 // Use chunk size from settings if file is larger than threshold
                 return file.size > thresholdLength ? settings.chunk_size_db : -1;
             }

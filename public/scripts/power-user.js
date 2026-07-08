@@ -2297,7 +2297,7 @@ function validateStoryString(storyString, params) {
                 fieldsToWarn.push(field);
                 currentCache.fieldsWarned[field] = true;
             }
-            console.warn(`The story string does not contain {{${field}}}, but it would contain content:\n`, params[field]);
+            console.warn(`The story string does not contain {{${field}}}, but it would contain content:\n`);
         }
     }
 
