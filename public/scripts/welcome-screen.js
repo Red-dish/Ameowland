@@ -287,7 +287,11 @@ function sendAssistantMessage() {
     const message = {
         name: name,
         force_avatar: avatar,
-        mes: greeting,
+        mes: t`<h3>₊˚⊹ 🤍 Ameowra says, "Hi ! ⸜(｡˃ ᵕ ˂ )⸝♡" 🐈‍⬛ </h3>` + t`<p>Lets start by making sure everything works! </p>` + t`<p>✦ Paste your API key correctly (Its case sensitive! Even a space will cause problems)
+        <br>✦ If your key is not from Electron Hub or Zanity, the settings may be look different
+        <br>✦ For Zanity Keys, select "Custom Enpoint" and paste the URL provided by Zanity, then paste the API key in the "API Key" field.
+        <br>✦ Please read the entries labeled "READ THIS" in the lorebooks "!Global Commands" and "My Personal Book of Commands"
+        <br>✦ Don't be afraid to ask for help in the discord! ദ്ദി(ᵔᗜᵔ)</p>`  + '\n***\n'+ t`Hint: Set any character as your welcome page assistant from their "More..." menu.`,
         is_system: false,
         is_user: false,
         send_date: getMessageTimeStamp(),
@@ -679,8 +683,8 @@ async function refreshWelcomeScreen({ flashChat = null } = {}) {
             flashHighlight($(chatToFlash), 1000);
         }
     } else {
-        // Restore scroll position
-        chatElement.scrollTop = scrollTop + (chatElement.scrollHeight - scrollHeight);
+    // Restore scroll position
+    chatElement.scrollTop = scrollTop + (chatElement.scrollHeight - scrollHeight);
     }
 }
 
@@ -800,18 +804,18 @@ async function getRecentChats() {
         });
 
     dataWithEntities.forEach(({ chat, character, group }, index) => {
-        const chatTimestamp = timestampToMoment(chat.last_mes);
-        chat.char_name = character?.name || group?.name || '';
-        chat.date_short = chatTimestamp.format('l');
-        chat.date_long = chatTimestamp.format('LL LT');
-        chat.chat_name = chat.file_name.replace('.jsonl', '');
-        chat.char_thumbnail = character ? getThumbnailUrl('avatar', character.avatar) : system_avatar;
-        chat.is_group = !!group;
+            const chatTimestamp = timestampToMoment(chat.last_mes);
+            chat.char_name = character?.name || group?.name || '';
+            chat.date_short = chatTimestamp.format('l');
+            chat.date_long = chatTimestamp.format('LL LT');
+            chat.chat_name = chat.file_name.replace('.jsonl', '');
+            chat.char_thumbnail = character ? getThumbnailUrl('avatar', character.avatar) : system_avatar;
+            chat.is_group = !!group;
         chat.hidden = index >= settings.collapsedDisplayed;
-        chat.avatar = chat.avatar || '';
-        chat.group = chat.group || '';
+            chat.avatar = chat.avatar || '';
+            chat.group = chat.group || '';
         chat.pinned = PinnedChatsManager.isPinned(chat);
-    });
+        });
 
     return dataWithEntities.map(t => t.chat);
 }

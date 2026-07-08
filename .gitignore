@@ -58,3 +58,4 @@ public/scripts/extensions/third-party
 yarn.lock
 *.code-workspace
 test-results/
+public/copy index.html
