@@ -23,6 +23,108 @@ import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getOrCreatePersonaDescriptor, setPersonaDescription, user_avatar } from './personas.js';
+import { isAdmin, getCurrentUserHandle } from './user.js';
+
+
+const botmakersMap = {
+    "default-user":["#hidden#-Caleb","#hidden#-Xavier", "#hidden#-meows", "#hidden#-Rafayel", "#hidden#-narrator"],
+    "lyra": ["bb-lyra-CallumThorne", "bb-lyra-MarshallLee", "bb-lyra-Taeha", "bb-lyra-evern"],
+    "violet": ["bb-violet-alessandro", "bb-violet-luca","bb-violet-jinu","bb-violet-rowan", "bb-violet-kyle", "bb-violet-dorian"],
+    "retsukoh": [
+        "bb-retsukoh-Sukuna","bb-retsukoh-gojo","bb-retsukoh-choso",
+        "bb-retsukoh-nanami","bb-retsukoh-toji","bb-retsukoh-geto",
+        "bb-retsukoh-sephiroth", "bb-retsukoh-zack", "bb-retsukoh-ryan"],
+    "aqua": ["bb-aqua-Cadan","bb-aqua-Cassian","bb-aqua-Niko","bb-aqua-Evander","bb-aqua-Virelya","bb-aqua-Lysander", "bb-aqua-ryouga"],
+    "dreamweaver":["bb-dreamweaver-Venryk", "bb-dreamweaver-tristan", "bb-dreamweaver-theron"],
+    "zelle":["bb-zelle-testing","bb-zelle-zayneli","bb-zelle-Lazriel", "bb-zelle-consorts"],
+    "wish":["bb-wish-taizi","bb-wish-selene","bb-wish-sabrina","bb-wish-kira", "bb-wish-jonah"],
+    "ravenh":["bb-ravenh-Ryker", "bb-ravenh-rhea", "bb-ravenh-TheEmpyrean", "bb-ravenh-bryson", "bb-ravenh-noah"],
+    "romarinpng":["bb-romarinpng-kaito","bb-romarinpng-damiansterling", "bb-romarinpng-adrian"],
+    "luckii":["bb-luckii-xaden", "bb-luckii-soren", "bb-luckii-lucas", "bb-luckii-peeta"],
+    "toniy": ["bb-toniy-flashbang", "bb-toniy-carat"],
+    "noface": ["bb-noface-alexander"],
+};
+
+
+/**
+*Checks if the current user is an admin*
+*@returns {boolean} Whether the current user is an admin*
+*/
+function isCurrentUserAdmin() {
+    try {
+        // Use the existing isAdmin function if available
+        if (typeof isAdmin === 'function') {
+            return isAdmin();
+        }
+
+        // Fallback to checking specific admin usernames
+        const userHandle = getCurrentUserHandle();
+        return ['admin', 'default-user'].includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking admin status:', error);
+        return false;
+    }
+}
+
+/**
+ *Checks if the current user is a botmaker*
+* @returns {boolean} Whether the current user is a botmaker*
+ */
+function isCurrentUserBotmaker() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return Object.keys(botmakersMap).includes(userHandle);
+    } catch (error) {
+        console.error('[WI] Error checking botmaker status:', error);
+        return false;
+    }
+}
+
+/**
+* Gets the list of loreBooks the current user has access to if they're a botmaker*
+ *@returns {string[]} Array of loreBook names the user has access to*
+*/
+function getBotmakerAllowedLoreBooks() {
+    try {
+        const userHandle = getCurrentUserHandle();
+        return botmakersMap[userHandle] || [];
+    } catch (error) {
+        console.error('[WI] Error getting allowed loreBooks:', error);
+        return [];
+    }
+}
+
+/**
+*Checks if a user has access to view a specific loreBook*
+*@param {string} lorebookName - Name of the loreBook to check access for*
+*@returns {boolean} Whether the user has access to the loreBook*
+*/
+function hasLoreBookAccess(lorebookName) {
+    // Admins have access to everything
+    if (isCurrentUserAdmin()) {
+        return true;
+    }
+
+    // Assume personal loreBooks are prefixed with "bb-username-"
+    const userHandle = getCurrentUserHandle();
+    if (lorebookName.startsWith(`bb-${userHandle}-`)) {
+        return true; // User's personal loreBook
+    }
+
+    // Check if it's a global loreBook (no special prefix)
+    if (!lorebookName.startsWith('bb-') && !lorebookName.includes('#hidden#')) {
+        return true; // Global loreBook accessible to all
+    }
+
+    // For botmakers, check if they have access to this specific loreBook
+    if (isCurrentUserBotmaker()) {
+        const allowedBooks = getBotmakerAllowedLoreBooks();
+        return allowedBooks.includes(lorebookName);
+    }
+
+    // By default, deny access
+    return false;
+}
 
 export const world_info_insertion_strategy = {
     evenly: 0,
@@ -349,7 +451,7 @@ class WorldInfoBuffer {
         if (matchWholeWords) {
             const keyWords = transformedString.split(/\s+/);
 
-            if (keyWords.length > 1) {
+            if (keyWords.length > 3) {
                 return haystack.includes(transformedString);
             } else {
                 // Use custom boundaries to include punctuation and other non-alphanumeric characters
@@ -913,6 +1015,74 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanD
         outletEntries: activatedWorldInfo.outletEntries ?? {},
     };
 }
+/**
+*Filters world names based on user permissions*
+*@param {object} data - The data containing world names*
+*@returns {string[]} Filtered list of world names*
+*/
+function filterWorldNames(data) {
+    let world_names = data.world_names?.length ? data.world_names : [];
+    console.log('[WorldInfo] Starting world filtering with', world_names.length, 'worlds');
+
+    if (Array.isArray(world_names)) {
+        try {
+            const currentUserHandle = getCurrentUserHandle();
+            const isUserAdmin = isCurrentUserAdmin();
+            const isUserBotmaker = isCurrentUserBotmaker();
+            console.log(`[WorldInfo] User: ${currentUserHandle}, Admin: ${isUserAdmin}, Botmaker: ${isUserBotmaker}`);
+
+            // Exempt admins from filtering
+            if (isUserAdmin) {
+                console.log('[WorldInfo] Bypassing lorebook filtering for admin', currentUserHandle);
+                // No filtering needed - return all world names
+                return world_names;
+            } else {
+                console.log('[WorldInfo] Applying filters for user', currentUserHandle);
+
+                // First layer: Filter out #hidden# files for non-admins
+                let filteredNames = world_names.filter(name => !name.includes('#hidden#'));
+                console.log('[WorldInfo] After hidden filter:', filteredNames.length, 'worlds remain');
+
+                // Second layer: Apply user handle pattern matching
+                world_names = filteredNames.filter(name => {
+                    // Personal loreBooks: match username prefix
+                    if (name.startsWith(`bb-${currentUserHandle}-`)) {
+                        return true;
+                    }
+
+                    // Global loreBooks: available to everyone
+                    if (!name.startsWith('bb-')) {
+                        return true;
+                    }
+
+                    // Botmaker loreBooks: check permissions
+                    if (isUserBotmaker) {
+                        const allowedBooks = getBotmakerAllowedLoreBooks();
+                        return allowedBooks.includes(name);
+                    }
+
+                    // User-specific loreBooks: deny access
+                    if (name.match(/^\$\$-(\w+)/)) {
+                        console.log(`[WorldInfo] Filtering out ${name} - not for current user`);
+                        return false;
+                    }
+
+                    return false;
+                });
+
+                console.log('[WorldInfo] Final filtered count:', world_names.length, 'worlds');
+                return world_names;
+            }
+        } catch (error) {
+            console.error('[WorldInfo] Error during world filtering:', error);
+            // In case of error, keep original world_names
+            return world_names;
+        }
+    }
+
+    return world_names;
+}
+
 
 export function setWorldInfoSettings(settings, data) {
     if (settings.world_info_depth !== undefined)
@@ -993,6 +1163,71 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info_max_recursion_steps_counter').val(world_info_max_recursion_steps);
 
     world_names = data.world_names?.length ? data.world_names : [];
+
+
+        if (typeof getCurrentUserHandle !== 'function') {
+            function getCurrentUserHandle() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Try to get from localStorage or sessionStorage
+                        const userID = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
+                        if (userID) return userID;
+                        
+                        // Check if it's available from other ST modules
+                        if (window.userSettings && window.userSettings.name) {
+                            return window.userSettings.name;
+                        }
+                    }
+                    
+                    // If running in Node.js side of SillyTavern
+                    if (typeof process !== 'undefined' && process.env.CURRENT_USER) {
+                        return process.env.CURRENT_USER;
+                    }
+                    
+                    return 'anonymous';
+                } catch (error) {
+                    console.error('[WorldInfo] Error getting user handle:', error);
+                    return 'anonymous';
+                }
+            }
+            console.log('[WorldInfo] Defined fallback getCurrentUserHandle function');
+        }
+
+// Function to check if user is admin - only define if it doesn't exist
+        if (typeof isAdmin !== 'function') {
+            function isAdmin() {
+                try {
+                    // Check if we're in a browser environment
+                    if (typeof window !== 'undefined') {
+                        // Check if it's available from other ST modules
+                        if (typeof window.isUserAdmin === 'function') {
+                            return window.isUserAdmin();
+                        }
+                        
+                        // Fallback to checking specific admin users
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    // If running in Node.js side
+                    if (typeof process !== 'undefined') {
+                        const userHandle = getCurrentUserHandle();
+                        const adminUsers = ['default-user', 'admin']; // Add your admin usernames
+                        return adminUsers.includes(userHandle);
+                    }
+                    
+                    return false;
+                } catch (error) {
+                    console.error('[WorldInfo] Error checking admin status:', error);
+                    return false;
+                }
+            }
+            console.log('[WorldInfo] Defined fallback isAdmin function');
+        }
+        // Call the function with the data and assign the result back
+        world_names = filterWorldNames(data);
 
     // Add to existing selected WI if it exists
     selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
@@ -2068,7 +2303,7 @@ export async function updateWorldInfoList() {
     if (result.ok) {
         const data = await result.json();
         const editorSelected = String($('#world_editor_select').find(':selected').text());
-        world_names = data.world_names?.length ? data.world_names : [];
+        world_names = filterWorldNames(data);
         $('#world_info').find('option[value!=""]').remove();
         $('#world_editor_select').find('option[value!=""]').remove();
 
@@ -2311,8 +2546,29 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     updateEditor = async (navigation, flashOnNav = true) => await displayWorldEntries(name, data, navigation, flashOnNav);
 
     const worldEntriesList = $('#world_popup_entries_list');
+
+    const hasEditPermission = isCurrentUserAdmin() ||
+                              !name.startsWith('bb-') ||
+                              name.startsWith(`bb-${getCurrentUserHandle()}-`) ||
+                              (isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name));
+
+    if (!hasEditPermission) {
+        // Make all inputs and controls read-only
+        worldEntriesList.find('input, textarea, select').prop('disabled', true);
+        worldEntriesList.find('.delete_entry_button, .duplicate_entry_button, .move_entry_button').hide();
+        $('#world_popup_new, #world_popup_name_button, #world_popup_delete, #world_duplicate').prop('disabled', true);
+
+        // Add a notice
+        worldEntriesList.prepend('<div class="alert alert-warning">You have view-only access to this lorebook.</div>');
+    }
+
+
+    // We save costly performance by removing all events before emptying. Because we know there are no relevant event handlers reacting on removing elements
+    // This prevents jQuery from actually going through all registered events on the controls for each entry when removing it
     clearEntryList(worldEntriesList);
-    worldEntriesList.show();
+    worldEntriesList.find('*').off();
+    worldEntriesList.empty().show();
+    
 
     if (!data || !('entries' in data)) {
         $('#world_popup_new').off('click').on('click', nullWorldInfo);
@@ -3419,7 +3675,7 @@ export async function getWorldEntry(name, data, entry) {
             return;
         }
         const wrapper = document.createElement('div');
-        wrapper.textContent = t`Move/Copy '${sourceName}' to:`;
+        wrapper.textContent = t`ONLY Copy '${sourceName}' to:`;
         const container = document.createElement('div');
         container.appendChild(wrapper);
         container.appendChild(select);
@@ -3430,7 +3686,6 @@ export async function getWorldEntry(name, data, entry) {
         const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
             cancelButton: t`Cancel`,
             customButtons: [
-                { text: t`Move`, result: POPUP_RESULT.CUSTOM1 },
                 { text: t`Copy`, result: POPUP_RESULT.CUSTOM2 },
             ],
         });
@@ -4099,6 +4354,17 @@ export async function saveWorldInfo(name, data, immediately = false) {
         return;
     }
 
+    // Check if user has permission to modify this lorebook
+    if (!isCurrentUserAdmin() && name.startsWith('bb-') && !name.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(name);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to save lorebook ${name} without permission`);
+            toastr.error('You do not have permission to modify this lorebook');
+            return;
+        }
+    }
+
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
 
@@ -4112,6 +4378,16 @@ export async function saveWorldInfo(name, data, immediately = false) {
 async function renameWorldInfo(name, data) {
     const oldName = name;
     const newName = await Popup.show.input('Rename World Info', 'Enter a new name:', oldName);
+
+    // Check if user has permission to rename this lorebook
+    if (!isCurrentUserAdmin() && oldName.startsWith('bb-') && !oldName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(oldName);
+        if (!isAllowedBotmaker) {
+            toastr.error('You do not have permission to rename this lorebook');
+            return;
+        }
+    }
 
     if (oldName === newName || !newName) {
         console.debug('World info rename cancelled');
@@ -4235,6 +4511,16 @@ export async function deleteWorldInfo(worldInfoName) {
     if (!world_names.includes(worldInfoName)) {
         return false;
     }
+        // Check if user has permission to delete this lorebook
+    if (!isCurrentUserAdmin() && worldInfoName.startsWith('bb-') && !worldInfoName.startsWith(`bb-${getCurrentUserHandle()}-`)) {
+        // Check if it's a botmaker lorebook that the current user is allowed to modify
+        const isAllowedBotmaker = isCurrentUserBotmaker() && getBotmakerAllowedLoreBooks().includes(worldInfoName);
+        if (!isAllowedBotmaker) {
+            console.error(`[WI] User ${getCurrentUserHandle()} attempted to delete lorebook ${worldInfoName} without permission`);
+            toastr.error('You do not have permission to delete this lorebook');
+            return false;
+        }
+    }
 
     const response = await fetch('/api/worldinfo/delete', {
         method: 'POST',
@@ -4338,6 +4624,15 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
 
     if (!worldName) {
         return false;
+    }
+
+    // Check if the user is trying to create a lorebook with a protected prefix
+    const userHandle = getCurrentUserHandle();
+    if (worldName.startsWith('bb-') && !worldName.startsWith(`bb-${userHandle}-`)) {
+        if (!isCurrentUserAdmin()) {
+            toastr.error('You can only create loreBooks with your own username prefix');
+            return false;
+        }
     }
 
     const sanitizedWorldName = await getSanitizedFilename(worldName);
@@ -5156,7 +5451,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     buffer.resetExternalEffects();
     timedEffects.cleanUp();
 
-    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`, Array.from(allActivatedEntries.values()));
+    console.log(`[WI] ${isDryRun ? 'Hypothetically adding' : 'Adding'} ${allActivatedEntries.size} entries to prompt`);
     console.debug(`[WI] --- DONE${isDryRun ? ' (DRY RUN)' : ''} ---`);
 
     return { worldInfoBefore, worldInfoAfter, EMEntries, WIDepthEntries, ANBeforeEntries: ANTopEntries, ANAfterEntries: ANBottomEntries, outletEntries: WIOutletEntries, allActivatedEntries: new Set(allActivatedEntries.values()) };
