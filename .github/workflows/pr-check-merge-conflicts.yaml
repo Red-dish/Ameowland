@@ -18,16 +18,6 @@ jobs:
     if: always()
 
     steps:
-      - name: Mint App Token
-        id: app
-        # Create a GitHub App token
-        # https://github.com/marketplace/actions/create-github-app-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ vars.ST_BOT_APP_ID }}
-          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Check Merge Conflicts
         # Label Conflicting Pull Requests
         # https://github.com/marketplace/actions/label-conflicting-pull-requests
