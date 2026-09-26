@@ -69,8 +69,8 @@ jobs:
         # https://github.com/marketplace/actions/create-github-app-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
-          app-id: ${{ vars.ST_BOT_APP_ID }}
-          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Mark Issues/PRs Awaiting User Response
