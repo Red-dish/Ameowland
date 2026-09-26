@@ -44,8 +44,9 @@ const botmakersMap = {
     "toniy": ["bb-toniy-flashbang", "bb-toniy-carat"],
     "noface": ["bb-noface-alexander"],
     "queen": ["bb-queen-arthur", "bb-queen-mason"],
-    "vanyt": ["bb-vanyt-witchofthewaste"]
-
+    "vanyt": ["bb-vanyt-witchofthewaste"],
+    "audrey": ["bb-audrey-casper"],
+    "hyperion": ["bb-hyperion-Justice"]
 };
 
 
