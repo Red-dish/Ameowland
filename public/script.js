@@ -245,7 +245,7 @@ import {
 } from './scripts/personas.js';
 import { getBackgrounds, initBackgrounds, loadBackgroundSettings, background_settings } from './scripts/backgrounds.js';
 import { loader } from './scripts/action-loader.js';
-import { BulkEditOverlay, CharacterContextMenu, chatBulkManager  } from './scripts/BulkEditOverlay.js';
+import { BulkEditOverlay } from './scripts/BulkEditOverlay.js';
 import { initTextGenModels } from './scripts/textgen-models.js';
 import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, decodeStyleTags, encodeStyleTags, isExternalMediaAllowed, preserveNeutralChat, restoreNeutralChat, formatCreatorNotes, initChatUtilities, addDOMPurifyHooks } from './scripts/chats.js';
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
@@ -282,6 +282,7 @@ import { initDomHandlers } from './scripts/dom-handlers.js';
 import { SimpleMutex } from './scripts/util/SimpleMutex.js';
 import { AudioPlayer } from './scripts/audio-player.js';
 import { MacroEnvBuilder } from './scripts/macros/engine/MacroEnvBuilder.js';
+import { MessageFormatter } from './scripts/message-formatter.js';
 import { MacroEngine } from './scripts/macros/engine/MacroEngine.js';
 import { addChatBackupsBrowser } from './scripts/chat-backups.js';
 import { onboardingExperimentalMacroEngine } from './scripts/macros/engine/MacroDiagnostics.js';
@@ -603,6 +604,7 @@ export let is_send_press = false; //Send generation
 export const isGenerating = () => (is_send_press || is_group_generating);
 
 let this_del_mes = -1;
+let deleteToolCallsInDeleteMode = true;
 
 /** @type {string} */
 let this_edit_mes_chname = '';
@@ -1399,114 +1401,6 @@ export async function deleteCharacterChatByName(characterId, fileName) {
     await eventSource.emit(event_types.CHAT_DELETED, fileName);
 }
 
-
-/**
- * Deletes multiple chat files for the current character in bulk.
- * @param {string[]} chatFiles Array of chat file names (with .jsonl extension)
- * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
- */
-export async function bulkDelChat(chatFiles) {
-    if (!Array.isArray(chatFiles) || chatFiles.length === 0) {
-        console.warn('No chat files provided for bulk deletion');
-        return { success: [], failed: [], total: 0 };
-    }
-
-    const response = await fetch('/api/chats/delete/bulk', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfiles: chatFiles,
-            avatar_url: characters[this_chid].avatar,
-        }),
-    });
-
-    if (!response.ok) {
-        console.error('Failed to bulk delete chats');
-        throw new Error('Bulk delete request failed');
-    }
-
-    const result = await response.json();
-    
-    // Check if current chat was deleted and switch to another one
-    const currentChatFile = `${characters[this_chid].chat}.jsonl`;
-    if (result.success.includes(currentChatFile)) {
-        chat_metadata = {};
-        await replaceCurrentChat();
-    }
-
-    // Emit events for successfully deleted chats
-    for (const deletedFile of result.success) {
-        const name = deletedFile.replace('.jsonl', '');
-        await eventSource.emit(event_types.CHAT_DELETED, name);
-    }
-
-    return result;
-}
-
-/**
- * Deletes multiple character chats by their names for a specific character.
- * @param {string} characterId Character ID to delete chats for
- * @param {string[]} fileNames Array of chat file names to delete (without .jsonl extension)
- * @returns {Promise<{success: string[], failed: Array<{file: string, error: string}>, total: number}>} Bulk deletion results
- */
-export async function bulkDeleteCharacterChatsByName(characterId, fileNames) {
-    if (!Array.isArray(fileNames) || fileNames.length === 0) {
-        console.warn('No file names provided for bulk deletion');
-        return { success: [], failed: [], total: 0 };
-    }
-
-    // Make sure all the data is loaded.
-    await unshallowCharacter(characterId);
-
-    /** @type {import('./scripts/char-data.js').v1CharData} */
-    const character = characters[characterId];
-    if (!character) {
-        console.warn(`Character with ID ${characterId} not found.`);
-        throw new Error(`Character with ID ${characterId} not found`);
-    }
-
-    // Convert file names to include .jsonl extension
-    const chatFiles = fileNames.map(name => `${name}.jsonl`);
-
-    const response = await fetch('/api/chats/delete/bulk', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfiles: chatFiles,
-            avatar_url: character.avatar,
-        }),
-    });
-
-    if (!response.ok) {
-        console.error('Failed to bulk delete chats for character.');
-        throw new Error('Bulk delete request failed');
-    }
-
-    const result = await response.json();
-
-    // Check if current chat was deleted and switch to another one
-    if (result.success.some(file => file.replace('.jsonl', '') === character.chat)) {
-        const chatsResponse = await fetch('/api/characters/chats', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ avatar_url: character.avatar }),
-        });
-        const chats = Object.values(await chatsResponse.json());
-        chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
-        const newChatName = chats.length && typeof chats[0] === 'object' ? chats[0].file_name.replace('.jsonl', '') : `${character.name} - ${humanizedDateTime()}`;
-        await updateRemoteChatName(characterId, newChatName);
-    }
-
-    // Emit events for successfully deleted chats
-    for (const deletedFile of result.success) {
-        const name = deletedFile.replace('.jsonl', '');
-        await eventSource.emit(event_types.CHAT_DELETED, name);
-    }
-
-    return result;
-}
-
-
 export async function replaceCurrentChat() {
     await clearChat({ clearData: true });
 
@@ -1717,13 +1611,32 @@ export async function deleteLastMessage() {
     await eventSource.emit(event_types.MESSAGE_DELETED, chat.length);
 }
 
+function getMessageDeletionStartId(id, deleteToolCalls = true) {
+    const message = chat[id];
+    if (!deleteToolCalls || message?.is_user || message?.is_system) {
+        return id;
+    }
+
+    let startId = id;
+    while (startId > 0) {
+        const previousMessage = chat[startId - 1];
+        if (!previousMessage?.is_system || !Array.isArray(previousMessage.extra?.tool_invocations)) {
+            break;
+        }
+        startId--;
+    }
+
+    return startId;
+}
+
 /**
  * Deletes a message from the chat by its ID, optionally asking for confirmation.
  * @param {number} id The ID of the message to delete.
  * @param {number} [swipeDeletionIndex] Deletes the swipe with that index.
  * @param {boolean} [askConfirmation=false] Whether to ask for confirmation before deleting.
+ * @param {boolean} [deleteToolCalls=true] Whether to delete preceding tool-call messages.
  */
-export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfirmation = false) {
+export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfirmation = false, deleteToolCalls = true) {
     const canDeleteSwipe = swipeDeletionIndex !== undefined && swipeDeletionIndex !== null;
     if (canDeleteSwipe) {
         if (swipeDeletionIndex < 0) {
@@ -1761,13 +1674,19 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
         return;
     }
 
-    chat.splice(id, 1);
-    messageElement.remove();
+    const firstMessageId = getMessageDeletionStartId(id, deleteToolCalls);
+    const messageIds = Array.from({ length: id - firstMessageId + 1 }, (_, index) => id - index);
+
+    // Delete from the end so earlier indices remain stable.
+    for (const messageId of messageIds) {
+        chat.splice(messageId, 1);
+        chatElement.find(`.mes[mesid="${messageId}"]`).remove();
+        deleteItemizedPromptForMessage(messageId);
+    }
 
     chat_metadata.tainted = true;
 
-    const startIndex = [0, minId].includes(id) ? id : null;
-    deleteItemizedPromptForMessage(id);
+    const startIndex = firstMessageId <= minId ? firstMessageId : null;
     updateViewMessageIds(startIndex);
     saveChatDebounced();
 
@@ -1848,15 +1767,35 @@ export async function sendTextareaMessage() {
 }
 
 /**
- * Formats the message text into an HTML string using Markdown and other formatting.
- * @param {string} mes Message text
- * @param {string} ch_name Character name
- * @param {boolean} isSystem If the message was sent by the system
- * @param {boolean} isUser If the message was sent by the user
- * @param {number} messageId Message index in chat array
- * @param {Partial<DOMPurify.Config>} [sanitizerOverrides] DOMPurify sanitizer option overrides
- * @param {boolean} [isReasoning] If the message is reasoning output
- * @returns {string} HTML string
+ * Formats raw message text into an HTML string ready for DOM insertion.
+ *
+ * The pipeline is, in order:
+ *   1. Prompt-bias stripping (message 0 only)
+ *   2. Comment / hidden-message normalisation
+ *   3. `beforeRegex` extension hooks (see {@link MessageFormatter})
+ *   4. Custom regex rules (`getRegexedString`)
+ *   5. `afterRegex` extension hooks
+ *   6. Markdown auto-fix (`fixMarkdown`)
+ *   7. HTML tag encoding (`encode_tags`)
+ *   8. Showdown Markdown → HTML conversion
+ *   9. `afterMarkdown` extension hooks
+ *  10. Name-prefix stripping (`allow_name2_display`)
+ *  11. DOMPurify sanitization
+ *
+ * All extension hooks run **before** DOMPurify (steps 3, 5, 9) so their
+ * output is always sanitised.
+ *
+ * @param {string} mes - Raw message text.
+ * @param {string} ch_name - Character name associated with the message.
+ * @param {boolean} isSystem - Whether the message is a system message.
+ * @param {boolean} isUser - Whether the message was sent by the user.
+ * @param {number} messageId - Index of the message in the chat array, or -1
+ *   for transient messages (e.g. streaming previews).
+ * @param {Partial<DOMPurify.Config>} [sanitizerOverrides] - DOMPurify option
+ *   overrides. Merged on top of the default config.
+ * @param {boolean} [isReasoning=false] - Whether the message is reasoning/thinking
+ *   output (affects regex placement and some display rules).
+ * @returns {string} Sanitized HTML string ready to assign to `innerHTML`.
  */
 export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false) {
     if (!mes) {
@@ -1913,12 +1852,20 @@ export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, san
         const indexOf = usableMessages.findIndex(x => x.index === Number(messageId));
         const depth = messageId >= 0 && indexOf !== -1 ? (usableMessages.length - indexOf - 1) : undefined;
 
+        mes = MessageFormatter.runStage(MessageFormatter.stage.BEFORE_REGEX, mes,
+            { ch_name, isSystem, isUser, messageId, isReasoning },
+        );
+
         // Always override the character name
         mes = getRegexedString(mes, regexPlacement, {
             characterOverride: ch_name,
             isMarkdown: true,
             depth: depth,
         });
+
+        mes = MessageFormatter.runStage(MessageFormatter.stage.AFTER_REGEX, mes,
+            { ch_name, isSystem, isUser, messageId, isReasoning },
+        );
     }
 
     if (power_user.auto_fix_generated_markdown) {
@@ -1997,6 +1944,10 @@ export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, san
         mes = mes.replace(/<code(.*)>[\s\S]*?<\/code>/g, function (match) {
             return match.replace(/&amp;/g, '&');
         });
+
+        mes = MessageFormatter.runStage(MessageFormatter.stage.AFTER_MARKDOWN, mes,
+            { ch_name, isSystem, isUser, messageId, isReasoning },
+        );
     }
 
     if (!power_user.allow_name2_display && ch_name && !isUser && !isSystem) {
@@ -3841,7 +3792,7 @@ class StreamingProcessor {
         }
 
         if (unlockUI) {
-        this.markUIGenStopped();
+            this.markUIGenStopped();
         }
 
         if (this.type !== 'impersonate') {
@@ -4179,24 +4130,24 @@ export async function generateRaw({ prompt = '', api = null, instructOverride = 
     // JSON string (matching the provided schema) will already be extracted.
     if (jsonSchema) {
         return data;
-        }
+    }
 
-        // format result, exclude user prompt bias
-        const message = cleanUpMessage({
+    // format result, exclude user prompt bias
+    const message = cleanUpMessage({
         getMessage: extractMessageFromData(data, api),
-            isImpersonate: false,
-            isContinue: false,
-            displayIncompleteSentences: true,
-            includeUserPromptBias: false,
-            trimNames: trimNames,
-            trimWrongNames: trimNames,
-        });
+        isImpersonate: false,
+        isContinue: false,
+        displayIncompleteSentences: true,
+        includeUserPromptBias: false,
+        trimNames: trimNames,
+        trimWrongNames: trimNames,
+    });
 
-        if (!message) {
-            throw new Error('No message generated');
-        }
+    if (!message) {
+        throw new Error('No message generated');
+    }
 
-        return message;
+    return message;
 }
 
 class TempResponseLength {
@@ -4590,15 +4541,15 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             mes: isOtherGroupMember
                 ? coreChat[i].mes
                 : promptReasoning.addToMessage(
-                coreChat[i].mes,
-                getRegexedString(
-                    String(coreChat[i].extra?.reasoning ?? ''),
-                    regex_placement.REASONING,
-                    { isPrompt: true, depth: depth },
+                    coreChat[i].mes,
+                    getRegexedString(
+                        String(coreChat[i].extra?.reasoning ?? ''),
+                        regex_placement.REASONING,
+                        { isPrompt: true, depth: depth },
+                    ),
+                    isPrefix,
+                    coreChat[i].extra?.reasoning_duration,
                 ),
-                isPrefix,
-                coreChat[i].extra?.reasoning_duration,
-            ),
         };
         if (promptReasoning.isLimitReached()) {
             break;
@@ -6091,21 +6042,21 @@ export async function duplicateCharacter({ avatar = null, silent = false } = {})
         }
         targetAvatar = avatar;
     } else {
-    if (this_chid === undefined || !characters[this_chid]) {
-        toastr.warning(t`You must first select a character to duplicate!`);
-        return '';
+        if (this_chid === undefined || !characters[this_chid]) {
+            toastr.warning(t`You must first select a character to duplicate!`);
+            return '';
         }
         targetAvatar = characters[this_chid].avatar;
     }
 
     // Show confirmation unless silent
     if (!silent) {
-    const confirmMessage = $(await renderTemplateAsync('duplicateConfirm'));
-    const confirm = await callGenericPopup(confirmMessage, POPUP_TYPE.CONFIRM);
+        const confirmMessage = $(await renderTemplateAsync('duplicateConfirm'));
+        const confirm = await callGenericPopup(confirmMessage, POPUP_TYPE.CONFIRM);
 
-    if (!confirm) {
-        console.log('User cancelled duplication');
-        return '';
+        if (!confirm) {
+            console.log('User cancelled duplication');
+            return '';
         }
     }
 
@@ -6121,10 +6072,10 @@ export async function duplicateCharacter({ avatar = null, silent = false } = {})
         return '';
     }
 
-        toastr.success(t`Character Duplicated`);
-        const data = await response.json();
+    toastr.success(t`Character Duplicated`);
+    const data = await response.json();
     await eventSource.emit(event_types.CHARACTER_DUPLICATED, { oldAvatar: targetAvatar, newAvatar: data.path });
-        await getCharacters();
+    await getCharacters();
 
     return data.path;
 }
@@ -7006,11 +6957,11 @@ export function syncSwipeToMes(messageId = null, swipeId = null, targetMessage =
     }
 
     if (!targetMessage) {
-    const targetMessageId = messageId ?? chat.length - 1;
-    if (targetMessageId >= chat.length || targetMessageId < 0) {
-        console.warn(`[syncSwipeToMes] Invalid message ID: ${messageId}`);
-        return false;
-    }
+        const targetMessageId = messageId ?? chat.length - 1;
+        if (targetMessageId >= chat.length || targetMessageId < 0) {
+            console.warn(`[syncSwipeToMes] Invalid message ID: ${messageId}`);
+            return false;
+        }
 
         targetMessage = chat[targetMessageId];
     }
@@ -7470,8 +7421,8 @@ export async function saveChat({ chatName, withMetadata, mesId, force = false, c
     const trimmedChat = Array.isArray(chatData)
         ? chatData
         : (mesId !== undefined && mesId >= 0 && mesId < chat.length)
-        ? chat.slice(0, Number(mesId) + 1)
-        : chat.slice();
+            ? chat.slice(0, Number(mesId) + 1)
+            : chat.slice();
 
     /** @type {ChatHeader} */
     const chatHeader = {
@@ -8241,7 +8192,7 @@ function updateMessage(div) {
     return { mesBlock, text, mes, bias };
 }
 
-function openMessageDelete(fromSlashCommand) {
+function openMessageDelete(fromSlashCommand, deleteToolCalls = true) {
     closeMessageEditor();
     hideSwipeButtons();
     if (fromSlashCommand || (!is_send_press) || (selected_group && !is_group_generating)) {
@@ -8260,6 +8211,7 @@ function openMessageDelete(fromSlashCommand) {
             is_group_generating: ${is_group_generating}`);
     }
     this_del_mes = -1;
+    deleteToolCallsInDeleteMode = deleteToolCalls;
     is_delete_mode = true;
 }
 
@@ -9389,7 +9341,7 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1) {
         swipeId = Number(swipeId);
         if (!Number.isInteger(swipeId) || swipeId < 0) {
             toastr.warning(t`Invalid swipe ID.`);
-        return;
+            return;
         }
     }
 
@@ -9438,7 +9390,7 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1) {
     if (swipeId === currentSwipeId) {
         const direction = (swipeId <= newSwipeId) ? SWIPE_DIRECTION.RIGHT : SWIPE_DIRECTION.LEFT;
         // Animate swipe and swap displayed message when the currently visible swipe was deleted.
-    await swipe(null, direction, { source: SWIPE_SOURCE.DELETE, repeated: false, forceMesId: messageId, forceSwipeId: newSwipeId });
+        await swipe(null, direction, { source: SWIPE_SOURCE.DELETE, repeated: false, forceMesId: messageId, forceSwipeId: newSwipeId });
     } else {
         await updateSwipeCounter(messageId);
         if (messageId !== chat.length - 1) {
@@ -9822,7 +9774,7 @@ export async function createOrEditCharacter(e) {
             return;
         }
         try {
-            //if the character name text area isn't empty (only posible when creating a new character)
+            //if the character name text area isn't empty (only possible when creating a new character)
             let url = '/api/characters/create';
 
             if (crop_data != undefined) {
@@ -11304,6 +11256,7 @@ jQuery(async function () {
         });
         $(this).addClass('selected'); //sets the bg of the mes selected for deletion
         var i = Number($(this).attr('mesid')); //checks the message ID in the chat
+        i = getMessageDeletionStartId(i, deleteToolCallsInDeleteMode);
         this_del_mes = i;
         //as long as the current message ID is less than the total chat length
         while (i < chat.length) {
@@ -11334,10 +11287,10 @@ jQuery(async function () {
         });
 
         try {
-        if (group) {
-            await deleteGroupChat(group, chatFile);
-        } else {
-            await delChat(`${chatFile}.jsonl`);
+            if (group) {
+                await deleteGroupChat(group, chatFile);
+            } else {
+                await delChat(`${chatFile}.jsonl`);
             }
         } catch (error) {
             loaderHandle.hide();
@@ -11628,6 +11581,7 @@ jQuery(async function () {
     ///////////// OPTIMIZED LISTENERS FOR LEFT SIDE OPTIONS POPUP MENU //////////////////////
     $('#options [id]').on('click', async function (event, customData) {
         const fromSlashCommand = customData?.fromSlashCommand || false;
+        const deleteToolCalls = customData?.deleteToolCalls ?? true;
         var id = $(this).attr('id');
 
         // Check whether a custom prompt was provided via custom data (for example through a slash command)
@@ -11706,7 +11660,7 @@ jQuery(async function () {
                 Generate('continue', buildOrFillAdditionalArgs());
             }
         } else if (id == 'option_delete_mes') {
-            setTimeout(() => openMessageDelete(fromSlashCommand), animation_duration);
+            setTimeout(() => openMessageDelete(fromSlashCommand, deleteToolCalls), animation_duration);
         } else if (id == 'option_close_chat') {
             await closeCurrentChat();
         } else if (id === 'option_settings') {

@@ -169,25 +169,11 @@ function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategorie
             continue;
         }
 
-        // Symlink for both WORLD and CHARACTER types
-        if (contentItem.type === CONTENT_TYPES.WORLD || contentItem.type === CONTENT_TYPES.CHARACTER) {
-            try {
-                fs.symlinkSync(contentPath, targetPath, 'file');
-                console.info(`Created symlink for ${contentItem.filename} to ${targetPath}`);
-                anyContentAdded = true;
-            } catch (err) {
-                console.error(`Failed to create symlink for ${contentItem.filename}: ${err.message}`);
-                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-                fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-                console.info(`Copied ${contentItem.filename} to ${targetPath} as fallback`);
-                anyContentAdded = true;
-            }
-        } else {
-            fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-            fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
-            console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
-            anyContentAdded = true;
-        }
+        fs.mkdirSync(contentTarget, { recursive: true });
+        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        setPermissionsSync(targetPath);
+        console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
+        anyContentAdded = true;
     }
 
     writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
@@ -570,11 +556,6 @@ async function downloadPygmalionCharacter(id) {
  */
 function parseChubUrl(str) {
     const splitStr = str.split('/');
-    const length = splitStr.length;
-
-    if (length < 2) {
-        return null;
-    }
 
     let domainIndex = -1;
 
@@ -584,20 +565,25 @@ function parseChubUrl(str) {
         }
     });
 
-    const lastTwo = domainIndex !== -1 ? splitStr.slice(domainIndex + 1) : splitStr;
+    const cleanUrl = domainIndex !== -1 ? splitStr.slice(domainIndex + 1) : splitStr;
+    const length = cleanUrl.length;
 
-    const firstPart = lastTwo[0].toLowerCase();
+    if (length < 2) {
+        return null;
+    }
+
+    const firstPart = cleanUrl[0].toLowerCase();
 
     if (firstPart === 'characters' || firstPart === 'lorebooks') {
         const type = firstPart === 'characters' ? 'character' : 'lorebook';
-        const id = type === 'character' ? lastTwo.slice(1).join('/') : lastTwo.join('/');
+        const id = type === 'character' ? cleanUrl.slice(1).join('/') : cleanUrl.join('/');
         return {
             id: id,
             type: type,
         };
     } else if (length === 2) {
         return {
-            id: lastTwo.join('/'),
+            id: cleanUrl.join('/'),
             type: 'character',
         };
     }
